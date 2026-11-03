@@ -121,9 +121,10 @@ const lineFrag = /* glsl */`
     // the distance to it, d = R·cos(π·f) (exact for a straight edge), and the ink is a
     // band of the stroke's width with a one-pixel ramp.
     //   outline  centred on the boundary (half inside, half outside)
-    //   contour  on the near side only, the way a pen follows the edge of the part in
-    //            front, so it is never inked on both sides of a fold
-    float R = 2.0 * uR + 1.5, nSil = 0.0, nOcc = 0.0;
+    //   part     where two parts meet, centred the same way
+    //   contour  one part of a solid in front of another: on the near side only, the
+    //            way a pen follows the edge of the part in front, never on both sides
+    float R = 2.0 * uR + 1.5, nSil = 0.0, nOcc = 0.0, nPart = 0.0;
     // the depth slope of the surface at this pixel, from its normal (orthographic eye):
     // a smooth surface lands on this plane; a fold in front of another part does not
     vec2 slope = nc.xy / max(nc.z, 0.25);
@@ -141,11 +142,14 @@ const lineFrag = /* glsl */`
         if (abs((cb ? oid(n) : id) - uHot) < 0.5) hot = 1.0;
         continue;
       }
-      if (abs(id - oid(n)) > 0.5) { if (c.a < n.a) nOcc += 1.0; continue; }       // this solid in front of another
+      if (abs(id - oid(n)) > 0.5) { nPart += 1.0; continue; }                     // two parts meet: always a line
       if (n.a - (c.a + dot(slope, dir * R * uWorldPx)) > jump) nOcc += 1.0;        // this part in front of another
     }
     if (nSil > 0.0) sil = clamp(uR + 0.5 - R * cos(3.14159265 * min(nSil / 16.0, 0.5)), 0.0, 1.0);
     if (nOcc > 0.0) occ = clamp(2.0 * uR + 0.5 - R * cos(3.14159265 * min(nOcc / 16.0, 0.5)), 0.0, 1.0);
+    // where two parts meet (platter rim, platter on base, David's rock on the platter) the
+    // line is centred like the outline and never gives way: it holds at any Detail
+    float part = nPart > 0.0 ? clamp(uR + 0.5 - R * cos(3.14159265 * min(nPart / 16.0, 0.5)), 0.0, 1.0) : 0.0;
 
     // Creases: how far the surface turns across this pixel, read as the angle between
     // the normals one stroke either side, in eight directions. Only the crest of that
@@ -184,7 +188,7 @@ const lineFrag = /* glsl */`
     // into one twice as thick.
     float inner = max(max(cre, frm), occ) * (1.0 - step(0.5, nSil));
     vec3 col = cPlate;
-    col = mix(col, cEdge, inner);
+    col = mix(col, cEdge, max(inner, part));
     col = mix(col, mix(cEdge, cHi, hot), sil);
     if (uDebug > 0.5 && !cb) col = mix(cPlate, cHi, clamp(V(vUv) * 8.0, 0.0, 1.0));
     gl_FragColor = vec4(col, 1.0);

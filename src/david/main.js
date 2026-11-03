@@ -14,7 +14,10 @@ renderer.setPixelRatio(pixelRatio());
 
 const scene = new THREE.Scene();
 let lookVersion = 0; // bumped whenever the picture must be redrawn without the turntable moving
-const ID = { david: 1, platter: 2, base: 3 }; // David gets 1: the form value packed beside it keeps the most precision
+// Every part is its own solid with its own id, and a boundary between two ids is always a
+// line. David (with his own rock base) gets 1: the form value packed beside it keeps the
+// most precision.
+const ID = { david: 1, platterTop: 2, platterSide: 3, baseSide: 4, baseTop: 5, stud: 6 };
 
 // Hairline's camera: 45° azimuth, the 2:1 view (elevation atan ½).
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 20);
@@ -31,18 +34,25 @@ const spin = new THREE.Group();
 scene.add(spin);
 
 const R = 0.34; // platter radius, in David-heights
-const base = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.86, R * 0.9, 0.06, 96), pass.material(ID.base));
-base.position.y = -0.075;
-scene.add(base);
+// The turntable's base: a side and a top, so the base's own rim is a line too.
+const baseSide = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.86, R * 0.9, 0.06, 96, 1, true), pass.material(ID.baseSide));
+baseSide.position.y = -0.075;
+const baseTop = new THREE.Mesh(new THREE.CircleGeometry(R * 0.86, 96).rotateX(-Math.PI / 2), pass.material(ID.baseTop));
+baseTop.position.y = -0.045;
+scene.add(baseSide, baseTop);
 
-const platter = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.035, 128), pass.material(ID.platter));
-platter.position.y = -0.0175;
-spin.add(platter);
+// The platter: its top and its edge are separate parts, so the rim always draws.
+const platterSide = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.035, 128, 1, true), pass.material(ID.platterSide));
+platterSide.position.y = -0.0175;
+const platterTop = new THREE.Mesh(new THREE.CircleGeometry(R, 128).rotateX(-Math.PI / 2), pass.material(ID.platterTop));
+const platterBottom = new THREE.Mesh(new THREE.CircleGeometry(R, 128).rotateX(Math.PI / 2), pass.material(ID.platterSide));
+platterBottom.position.y = -0.035;
+spin.add(platterSide, platterTop, platterBottom);
 
 // Four detents marked on the rim: small studs, one per quarter.
 const studGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.012, 24);
 for (let i = 0; i < 4; i++) {
-  const s = new THREE.Mesh(studGeo, pass.material(ID.platter));
+  const s = new THREE.Mesh(studGeo, pass.material(ID.stud));
   const a = i * QUARTER + Math.PI / 4; // sits in front of a face, between the camera's axes
   s.position.set(Math.sin(a) * (R - 0.03), 0.006, Math.cos(a) * (R - 0.03));
   spin.add(s);
