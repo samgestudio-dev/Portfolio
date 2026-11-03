@@ -22,6 +22,8 @@ export function createTurntable({ tour = true } = {}) {
 
   return {
     get theta() { return theta; },
+    // straight to a face, at rest: for still pictures
+    jump(n) { theta = target = n * QUARTER; omega = 0; mode = 'rest'; idle = 0; },
     grab() { mode = 'drag'; samples.length = 0; touched = true; idle = 0; },
     drag(dθ, dt) {
       theta += dθ;

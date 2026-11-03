@@ -8,6 +8,7 @@ export default defineConfig({
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
         david: resolve(import.meta.dirname, 'david.html'),
+        phone: resolve(import.meta.dirname, 'phone.html'),
       },
     },
   },
