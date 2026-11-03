@@ -1,7 +1,7 @@
 import { createTurntable, bindWheel } from '../lib/turntable.js';
 import { Cam, proj, toward, prism3, hull, inside, circ, clamp, lerp } from '../lib/iso.js';
 import { buildPlatter, PLATTER_R } from '../lib/platter-svg.js';
-import { DRAWERS, COUNT, W, D, H, FT, MAX, carcass, drawer, frontAt } from './scene.js';
+import { DRAWERS, COUNT, W, D, HT as H, FT, MAX, carcass, drawer, frontAt } from './scene.js';
 
 /* System · 03 — a cabinet of design tokens on the turntable, two drawers pulled half out.
 
@@ -26,9 +26,9 @@ const N = DRAWERS.length;
 const C = Cam(45, 0.5, 1);
 const PULLK = [0.65, 1.15];
 {
-  const reach = Math.hypot(W / 2, D / 2 + MAX * PULLK[1] + FT + 2.6) + 2;
+  const reach = Math.hypot(W / 2, D / 2 + MAX * PULLK[1] + FT + 3.6) + 2;
   const P = proj(C), pts = [];
-  for (const [r, z] of [[PLATTER_R, 0], [PLATTER_R, -7.3], [PLATTER_R * 0.88, -20], [reach, H], [reach, 0], [Math.hypot(W / 2, D / 2), H]])
+  for (const [r, z] of [[PLATTER_R, 0], [PLATTER_R, -7.3], [PLATTER_R * 0.88, -20], [reach, H], [reach, 0], [Math.hypot(W / 2 + 1.5, D / 2 + 1.5), H]])
     for (const q of circ(0, 0, r, 96)) pts.push(P(q.u, q.v, z));
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), pad = 6;
   const x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;

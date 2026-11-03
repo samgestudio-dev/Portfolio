@@ -1,4 +1,4 @@
-import { rings, rrect, prism3, flat } from '../lib/iso.js';
+import { rings, rrect, circ, prism3, flat } from '../lib/iso.js';
 
 /* The token cabinet, as Hairline draws a cabinet (its Drawer figure): a plinth set back
    under a carcass, and drawers each built from a floor, two walls, its outline, a front
@@ -18,6 +18,7 @@ import { rings, rrect, prism3, flat } from '../lib/iso.js';
 export const W = 84, D = 56, Z0 = 6, M = 3, PITCH = 28, G = 1.6, FT = 3;
 const TW = 1.3, IN = 3.2, LOW = 2.2, HIGH = 3.6;   // a wall's thickness; the box's inset and its gaps under and over
 export const ZB = Z0 + M, H = ZB + 4 * PITCH + M;
+export const LID = 3, HT = H + LID;          // a top that overhangs the carcass a little
 export const MAX = 36;                       // mm a drawer comes out when chosen, at the slider's middle
 const X0 = -W / 2 + M + IN, X1 = W / 2 - M - IN;
 const YC = D / 2;                            // the carcass's face
@@ -34,6 +35,7 @@ export const DRAWERS = [
 
 const ZF = o => ({ o, U: [1, 0, 0], V: [0, 1, 0], W: [0, 0, 1] });    // a ring on the ground, along z
 const YF = o => ({ o, U: [1, 0, 0], V: [0, 0, 1], W: [0, 1, 0] });    // a ring standing in x–z, along y
+const XF = o => ({ o, U: [0, 1, 0], V: [0, 0, 1], W: [1, 0, 0] });    // a ring standing in y–z, along x
 const O = [0, 0, 0];
 
 /* What each drawer holds: cards, by how far back from the inside of the front they
@@ -47,14 +49,22 @@ const HOLD = {
 };
 export const COUNT = Object.fromEntries(Object.entries(HOLD).map(([k, v]) => [k, v.length]));
 
-/* The carcass: plinth, body, and the openings on its face (seen above a drawer that is out). */
+/* The carcass: plinth, body, its top, the sunk panels on the sides and back it shows, and
+   the openings on its face (seen above a drawer that is out). */
 export function carcass(P, T, frontSeen) {
   const out = [];
   const [pr, pi] = rings(-W / 2 + 3, -D / 2 + 3, W / 2 - 3, D / 2 - 3, 2.4, 1);
   const pl = prism3(P, T, ZF(O), pr, pi, 0, Z0);
   const [cr, ci] = rings(-W / 2, -D / 2, W / 2, D / 2, 3, 1.4);
   const bo = prism3(P, T, ZF(O), cr, ci, Z0, H);
+  const [lr, li] = rings(-W / 2 - 1.5, -D / 2 - 1.5, W / 2 + 1.5, D / 2 + 1.5, 4, 1.2, 6);
+  const lid = prism3(P, T, ZF(O), lr, li, H, HT);
   out.push(['plinth', 'sil', pl.sil], ['plinth', 'cr', pl.crease], ['body', 'sil', bo.sil], ['body', 'cr', bo.crease]);
+  // a sunk panel on each side and on the back, where the viewer sees that face
+  for (const sx of [-1, 1]) if (sx * T[0] > 0)
+    out.push(['panel', 'cr', flat(P, XF([sx * W / 2, 0, 0]), rrect(-D / 2 + 5, Z0 + 5, D / 2 - 5, H - 5, 2.5, 3), 0)]);
+  if (T[1] < 0) out.push(['panel', 'cr', flat(P, YF([0, -D / 2, 0]), rrect(-W / 2 + 5, Z0 + 5, W / 2 - 5, H - 5, 2.5, 3), 0)]);
+  out.push(['lid', 'sil', lid.sil], ['lid', 'cr', lid.crease]);
   if (frontSeen) for (const d of DRAWERS)
     out.push(['opening', 'cr', flat(P, YF(O), rrect(X0 - 0.8, d.z0 + LOW - 0.8, X1 + 0.8, d.z1 - HIGH + 1.4, 0.8, 2), YC)]);
   return out;
@@ -95,16 +105,33 @@ export function drawer(P, T, d, o, frontSeen) {
   for (const h of held) for (const [cls, dd] of h.paths) parts.push({ role: 'held', cls, d: dd });
   box(walls[1].a, walls[1].c, zb + TW, zt, 0.5, 'lo');
   box(X0, X1, zb, zt, 0.8, 'sil nf', 'outline');
+  // the runner along the outside of the near wall, that the drawer slides on
+  if (yb - YC > 1) {
+    const wx = walls[1].a < 0 ? X0 : X1, sx = wx < 0 ? -1 : 1, zm = (zb + zt) / 2 - 2;
+    const rail = prism3(P, T, YF([0, YC, 0]), rrect(Math.min(wx, wx + sx * 0.9), zm - 0.7, Math.max(wx, wx + sx * 0.9), zm + 0.7, 0.4, 2), null, 0, yb - YC);
+    parts.push({ role: 'box', cls: 'lo', d: rail.sil });
+  }
 
   // the front, its card holder and its pull
   const face = rrect(-W / 2 + M, d.z0, W / 2 - M, d.z1, 1.6, 4), faceIn = rrect(-W / 2 + M + 1, d.z0 + 1, W / 2 - M - 1, d.z1 - 1, 1, 4);
   const fr = prism3(P, T, YF(O), face, faceIn, yb, yf);
   parts.push({ role: 'front', cls: 'sil', d: fr.sil }, { role: 'front-cr', cls: 'cr', d: fr.crease });
   const zp = (d.z0 + d.z1) / 2 - 3;
-  if (frontSeen) parts.push({ role: 'holder', cls: 'mk', d: flat(P, YF(O), rrect(-9, zp + 4.5, 9, zp + 10, 1, 2), yf) });
-  const [br, bi] = rings(-10, zp - 1.3, 10, zp + 1.3, 1.3, 0.6);
-  const pu = prism3(P, T, YF(O), br, bi, yf, yf + 2.6);
-  parts.push({ role: 'pull', cls: 'sil', d: pu.sil }, { role: 'pull-cr', cls: 'cr', d: pu.crease });
+  if (frontSeen) {
+    // a sunk field on the front; the card holder with its card and two rivets
+    parts.push({ role: 'field', cls: 'cr', d: flat(P, YF(O), rrect(-W / 2 + M + 3.5, d.z0 + 3, W / 2 - M - 3.5, d.z1 - 3, 1.2, 3), yf) });
+    parts.push({ role: 'holder', cls: 'mk', d: flat(P, YF(O), rrect(-9, zp + 4.5, 9, zp + 10.5, 1, 2), yf) });
+    parts.push({ role: 'card', cls: 'cr', d: flat(P, YF(O), rrect(-7.4, zp + 5.6, 7.4, zp + 9.6, 0.5, 2), yf) });
+    for (const x of [-10.4, 10.4]) parts.push({ role: 'rivet', cls: 'dot', d: flat(P, YF(O), circ(x, zp + 7.5, 0.55, 10), yf) });
+  }
+  // the pull: a bar on two posts; under it the knob of the rod that keeps the cards in
+  const pull = [];
+  for (const x of [-7.5, 7.5]) pull.push(prism3(P, T, YF(O), circ(x, zp, 0.9, 12), null, yf, yf + 2.2));
+  const [br, bi] = rings(-10, zp - 1.1, 10, zp + 1.1, 1.1, 0.5);
+  pull.push(prism3(P, T, YF(O), br, bi, yf + 2.2, yf + 3.6));
+  const kn = prism3(P, T, YF(O), circ(0, d.z0 + 4.2, 1.5, 16), circ(0, d.z0 + 4.2, 1.0, 16), yf, yf + 1.4);
+  pull.push(kn);
+  for (const q of pull) parts.push({ role: 'pull', cls: 'sil', d: q.sil }, { role: 'pull-cr', cls: 'cr', d: q.crease });
 
   return frontSeen ? parts : parts.reverse();
 }
