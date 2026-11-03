@@ -17,14 +17,17 @@ import * as THREE from 'three';
         contour inside the figure (another solid, or one part in front of another by
         more than ~2 cm once the surface's own slope is taken out), a crease (the
         surface turns by more than the Detail angle), and the muscle lines (the
-        crest of the valley map). All in one ink and one width: the first three are
-        measured as a distance to their boundary, so they are antialiased alike.
+        crest of the valley map). One width for all, measured as a distance to the
+        boundary so they are antialiased alike; Hairline's inks: edge outside, mid in.
       Everything else is the plate colour, so solids stay opaque (rule 06) and the
       stroke is the only highlight (rule 04).                                       */
 
+// Hairline's own palette (@lucasmarkes/hairline LIGHT / DARK): edge for the silhouette,
+// mid for every stroke inside it, hi for what is chosen. The plate is the page colour,
+// as Hairline asks when the background is not its white or #08090a.
 const THEMES = {
-  light: { plate: '#f4f2eb', hi: '#bc422c', edge: '#4a463e', mid: '#8f887b', lo: '#c4bdb0' },
-  dark:  { plate: '#131311', hi: '#e0674f', edge: '#d8d4c8', mid: '#7d796f', lo: '#3f3d37' },
+  light: { plate: '#f4f2eb', hi: '#232327', edge: '#a4a4ac', mid: '#c3c3c9', lo: '#e0e0e4' },
+  dark:  { plate: '#131311', hi: '#d0d6e0', edge: '#5b5d64', mid: '#3e3e44', lo: '#29292d' },
 };
 
 const idVert = /* glsl */`
@@ -152,22 +155,25 @@ const lineFrag = /* glsl */`
     float part = nPart > 0.0 ? clamp(uR + 0.5 - R * cos(3.14159265 * min(nPart / 16.0, 0.5)), 0.0, 1.0) : 0.0;
 
     // Creases: how far the surface turns across this pixel, read as the angle between
-    // the normals one stroke either side, in eight directions. Only the crest of that
-    // turn is inked (it must not be beaten one stroke further on either side), so a
-    // rounded fold, which turns over a wide band, still draws as one stroke.
+    // the normals either side of it, in eight directions, at two reaches: far enough
+    // (rf) to catch a rounded fold such as a foot meeting the rock, and near (rn) to put
+    // the line on the fold's sharpest point. Only the crest is inked (not beaten one
+    // stroke further on either side), so any fold draws as one stroke.
     if (!cb) {
-      float rc = max(1.0, uR), best = 0.0;
+      float rf = max(2.0, 1.5 * uR), rn = 1.0, best = 0.0;
       vec2 bdir = vec2(1.0, 0.0);
       for (int k = 0; k < 8; k++) {
         float a = float(k) * 0.392699;
         vec2 dir = vec2(cos(a), sin(a));
-        float t = turnAt(vUv, dir * rc * uTexel, id, jump);
+        float t = turnAt(vUv, dir * rf * uTexel, id, jump);
         if (t > best) { best = t; bdir = dir; }
       }
       if (best > uCrease) {
-        vec2 o = bdir * max(1.0, 2.0 * uR) * uTexel, d = bdir * rc * uTexel;
-        float tp = turnAt(vUv + o, d, id, jump), tm = turnAt(vUv - o, d, id, jump);
-        if (best >= tp && best >= tm) cre = smoothstep(uCrease, uCrease * 1.25, best);
+        vec2 o = bdir * max(1.0, 2.0 * uR) * uTexel, df = bdir * rf * uTexel, dn = bdir * rn * uTexel;
+        float here = best + 0.5 * turnAt(vUv, dn, id, jump);
+        float tp = turnAt(vUv + o, df, id, jump) + 0.5 * turnAt(vUv + o, dn, id, jump);
+        float tm = turnAt(vUv - o, df, id, jump) + 0.5 * turnAt(vUv - o, dn, id, jump);
+        if (here >= tp && here >= tm) cre = smoothstep(uCrease, uCrease * 1.25, best);
       }
     }
     if (!cb) {
@@ -183,12 +189,12 @@ const lineFrag = /* glsl */`
         if (v >= V(vUv + o) && v >= V(vUv - o)) frm = smoothstep(uForm, uForm * 1.5, v);
       }
     }
-    // one ink for every line: outline, contours, creases and muscle lines alike. Inside
-    // lines give way within a stroke or two of the outline, so two lines never merge
-    // into one twice as thick.
+    // Hairline's hierarchy: the silhouette in edge, every line inside it in mid, and hi
+    // for what the pointer chose. Inside lines give way within a stroke or two of the
+    // outline, so two lines never merge into one twice as thick.
     float inner = max(max(cre, frm), occ) * (1.0 - step(0.5, nSil));
     vec3 col = cPlate;
-    col = mix(col, cEdge, max(inner, part));
+    col = mix(col, cMid, max(inner, part));
     col = mix(col, mix(cEdge, cHi, hot), sil);
     if (uDebug > 0.5 && !cb) col = mix(cPlate, cHi, clamp(V(vUv) * 8.0, 0.0, 1.0));
     gl_FragColor = vec4(col, 1.0);
