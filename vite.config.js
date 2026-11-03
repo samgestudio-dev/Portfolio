@@ -11,6 +11,7 @@ export default defineConfig({
         phone: resolve(import.meta.dirname, 'phone.html'),
         cabinet: resolve(import.meta.dirname, 'cabinet.html'),
         spacing: resolve(import.meta.dirname, 'spacing.html'),
+        springs: resolve(import.meta.dirname, 'springs.html'),
       },
     },
   },
