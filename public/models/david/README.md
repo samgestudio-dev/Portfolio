@@ -11,5 +11,9 @@ quantized (normals 10-bit) and meshopt-compressed. Load with GLTFLoader + Meshop
 | file          | triangles | size   | use                                   |
 |---------------|-----------|--------|---------------------------------------|
 | david-hi.glb  | 200k      | 821 KB | Fine Art close-up / zoom              |
-| david-mid.glb | 80k       | 341 KB | homepage turntable (desktop + iPhone) |
+| david-mid.glb | 80k       | 564 KB | homepage turntable (desktop + iPhone); carries `_FORMNORMAL` |
 | david-lo.glb  | 30k       | 132 KB | first-paint placeholder / small tiles |
+
+`david-mid.glb` also carries `_FORMNORMAL`: the scan's normal smoothed at muscle scale
+(Gaussian-weighted plane fit over a ~6 cm ball, σ = 0.012 David-heights), baked by
+`tools/formnormals.py`. The line study uses it for the cel tone and the muscle lines.

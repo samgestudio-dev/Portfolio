@@ -8,11 +8,13 @@ import { createHairlinePass } from './hairline-pass.js';
 const canvas = document.getElementById('stage');
 const readout = document.getElementById('readout');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
-const pixelRatio = () => Math.min(window.devicePixelRatio * 1.5, 3); // supersample the strokes a little
+// supersample the strokes a little on 1–2× screens; a 3× phone is already dense enough at 2×
+const pixelRatio = () => (window.devicePixelRatio >= 3 ? 2 : Math.min(window.devicePixelRatio * 1.5, 3));
 renderer.setPixelRatio(pixelRatio());
 
 const scene = new THREE.Scene();
-const ID = { base: 1, platter: 2, david: 3 };
+let lookVersion = 0; // bumped whenever the picture must be redrawn without the turntable moving
+const ID = { david: 1, platter: 2, base: 3 }; // David gets 1: the form value packed beside it keeps the most precision
 
 // Hairline's camera: 45° azimuth, the 2:1 view (elevation atan ½).
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 20);
@@ -81,6 +83,7 @@ function resize() {
   camera.updateProjectionMatrix();
   const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
   pass.setSize(buf.x, buf.y, renderer.getPixelRatio());
+  lookVersion++;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -130,11 +133,13 @@ canvas.addEventListener('keydown', e => {
 });
 
 /* ---- controls --------------------------------------------------------------- */
+const muscle = document.getElementById('muscle');
 const detail = document.getElementById('detail');
 const stroke = document.getElementById('stroke');
 const slowBtn = document.getElementById('slow');
 const themeBtn = document.getElementById('theme');
-const applyLook = () => pass.setLook({ detail: +detail.value, stroke: +stroke.value });
+const applyLook = () => (lookVersion++, pass.setLook({ detail: +detail.value, stroke: +stroke.value, muscle: +muscle.value }));
+muscle.addEventListener('input', applyLook);
 detail.addEventListener('input', applyLook);
 stroke.addEventListener('input', applyLook);
 slowBtn.addEventListener('click', () => { slow = !slow; slowBtn.setAttribute('aria-pressed', slow); });
@@ -150,6 +155,7 @@ function syncTheme() {
   const meta = document.querySelector('meta[name=theme-color]');
   if (meta) meta.content = dark ? '#131311' : '#f4f2eb';
   pass.setTheme(dark ? 'dark' : 'light');
+  lookVersion++;
 }
 themeBtn.addEventListener('click', () => {
   document.documentElement.dataset.theme = isDark() ? 'light' : 'dark';
@@ -166,14 +172,15 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(window.DAVID_MODEL_URL |
   let geo;
   gltf.scene.traverse(o => { if (o.isMesh && !geo) { o.updateWorldMatrix(true, false); geo = o.geometry.clone().applyMatrix4(o.matrixWorld); } });
   if (!geo.attributes.normal) geo.computeVertexNormals();
-  const david = new THREE.Mesh(geo, pass.material(ID.david));
+  const david = new THREE.Mesh(geo, pass.material(ID.david, { form: !!geo.attributes._formnormal }));
   spin.add(david);
+  lookVersion++;
   document.getElementById('loading').remove();
 }, undefined, err => { document.getElementById('loading').textContent = 'model failed to load'; console.error(err); });
 
 /* ---- loop ------------------------------------------------------------------- */
 const fmt = (n, w) => String(Math.round(n)).padStart(w, '0');
-let prev = performance.now(), lastText = '';
+let prev = performance.now(), lastText = '', lastKey = '';
 renderer.setAnimationLoop(now => {
   const dt = Math.min(0.05, (now - prev) / 1000) * (slow ? 0.25 : 1);
   prev = now;
@@ -184,5 +191,7 @@ renderer.setAnimationLoop(now => {
   const text = `θ ${fmt(s.degrees, 3)}° · ω ${s.omega.toFixed(2).padStart(5, ' ')} rad/s · face <b>${s.face}</b>/4 · ${s.mode}`;
   if (text !== lastText) { readout.innerHTML = text; lastText = text; }
 
-  pass.render(scene, camera, hot);
+  // draw only when something changed: the angle, the hover, the look, the size
+  const key = `${spin.rotation.y.toFixed(5)}|${hot}|${lookVersion}`;
+  if (key !== lastKey) { pass.render(scene, camera, hot); lastKey = key; }
 });
