@@ -15,13 +15,17 @@ const MAX_OMEGA = 28;     // a hard flick, clamped (rule 03)
 const TOUR_PAUSE = 2.6;   // s at rest before the tour flicks on
 
 export function createTurntable({ tour = true } = {}) {
-  let theta = 0, omega = 0, target = 0, mode = 'rest', idle = 0, touched = false;
+  let theta = 0, omega = 0, target = 0, mode = 'rest', idle = 0, touched = false, motorT = 0;
   const samples = [];
 
   const nearestAhead = () => Math.round((theta + omega * 0.18) / QUARTER) * QUARTER;
 
   return {
     get theta() { return theta; },
+    // a motor: drives ω toward a target (an ease of ~0.25 s); release() lets it coast
+    drive(target) { motorT = target; if (mode !== 'motor') { mode = 'motor'; idle = 0; touched = true; } },
+    // the motor lets go: it coasts from the speed it has, then the detent catches it
+    cut() { if (mode === 'motor') mode = 'coast'; },
     // straight to a face, at rest: for still pictures
     jump(n) { theta = target = n * QUARTER; omega = 0; mode = 'rest'; idle = 0; },
     grab() { mode = 'drag'; samples.length = 0; touched = true; idle = 0; },
@@ -47,7 +51,10 @@ export function createTurntable({ tour = true } = {}) {
       const n = Math.max(1, Math.ceil(dt / (1 / 240)));
       const h = dt / n;
       for (let i = 0; i < n; i++) {
-        if (mode === 'coast') {
+        if (mode === 'motor') {
+          omega += (motorT - omega) * (1 - Math.exp(-4 * h));
+          theta += omega * h;
+        } else if (mode === 'coast') {
           theta += omega * h;
           omega *= Math.exp(-FRICTION * h);
           if (Math.abs(omega) < CAPTURE) { mode = 'settle'; target = nearestAhead(); }
