@@ -1,74 +1,14 @@
 <!doctype html>
-<html lang="zh">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>卧室 · 动效房间 (Hairline)</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --hairline-plate: #101014;
-        --hairline-hi: #fafafa;
-        --hairline-edge: #a1a1aa;
-        --hairline-mid: #52525b;
-        --hairline-lo: #27272a;
-        --hairline-stroke: 0.9;
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; }
-      body {
-        background: var(--hairline-plate);
-        color: var(--hairline-hi);
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        overflow: hidden;
-      }
-      #app { position: fixed; inset: 0; }
-      #room { position: absolute; inset: 0; }
-      #room canvas { display: block; }
-
-      /* hairline 卡片托盘（右下角） */
-      #deck {
-        position: absolute;
-        right: 18px;
-        bottom: 18px;
-        width: 240px;
-        aspect-ratio: 5 / 4;
-        border: 1px solid var(--hairline-lo);
-        border-radius: 12px;
-        background: var(--hairline-plate);
-      }
-      #deck[data-hairline] { border: none; }
-
-      /* 读值（时间轴帧数） */
-      #readout {
-        position: absolute;
-        left: 18px;
-        bottom: 16px;
-        font-size: 12px;
-        letter-spacing: 0.08em;
-        color: var(--hairline-edge);
-      }
-      #readout b { color: var(--hairline-hi); font-weight: 500; }
-
-      /* 顶部小标题 */
-      #hint {
-        position: absolute;
-        top: 14px;
-        left: 18px;
-        font-size: 11px;
-        letter-spacing: 0.14em;
-        color: var(--hairline-mid);
-        text-transform: uppercase;
-      }
-    </style>
+    <meta name="theme-color" content="#f4f2eb" />
+    <meta name="description" content="Sam's portfolio — engineering, product, motion, and fine art. Four connected ways of making." />
+    <title>Sam — Four ways of making</title>
   </head>
   <body>
-    <div id="app">
-      <div id="room"></div>
-      <div id="hint">Bedroom · 交互动效 — 移动光标 = 拖动时间轴</div>
-      <div id="deck" aria-label="卡片托盘"></div>
-      <div id="readout">frame <b>00</b> / 24</div>
-    </div>
-    <script type="module" src="./src/main.js"></script>
+    <div id="root"></div>
+    <script type="module" src="./src/main.jsx"></script>
   </body>
 </html>
