@@ -24,7 +24,6 @@ camera.position.set(Math.sin(az) * Math.cos(el) * dist, target.y + Math.sin(el) 
 camera.lookAt(target);
 
 const pass = createHairlinePass(renderer);
-window.__lineStudy = { pass };   // for tuning from the console
 
 /* ---- objects ---------------------------------------------------------------- */
 // Everything spinning lives in `spin`; the base stays put.
@@ -84,6 +83,7 @@ function resize() {
   camera.updateProjectionMatrix();
   const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
   pass.setSize(buf.x, buf.y, renderer.getPixelRatio());
+  pass.setScale((camera.right - camera.left) / buf.x);
   lookVersion++;
 }
 window.addEventListener('resize', resize);
@@ -138,15 +138,11 @@ const muscle = document.getElementById('muscle');
 const detail = document.getElementById('detail');
 const stroke = document.getElementById('stroke');
 const slowBtn = document.getElementById('slow');
-const contBtn = document.getElementById('continuous');
-// the continuous-line rule: dashes joined into one smooth stroke, short bits hidden
-let continuous = true;
 const themeBtn = document.getElementById('theme');
 const applyLook = () => (lookVersion++, pass.setLook({ detail: +detail.value, stroke: +stroke.value, muscle: +muscle.value }));
 muscle.addEventListener('input', applyLook);
 detail.addEventListener('input', applyLook);
 stroke.addEventListener('input', applyLook);
-contBtn.addEventListener('click', () => { continuous = !continuous; contBtn.setAttribute('aria-pressed', continuous); lookVersion++; });
 slowBtn.addEventListener('click', () => { slow = !slow; slowBtn.setAttribute('aria-pressed', slow); });
 // The page follows the system until the button sets a theme explicitly.
 const sysDark = matchMedia('(prefers-color-scheme: dark)');
@@ -183,41 +179,6 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(window.DAVID_MODEL_URL |
   document.getElementById('loading').remove();
 }, undefined, err => { document.getElementById('loading').textContent = 'model failed to load'; console.error(err); });
 
-/* ---- ink: the body's lines, joined and smoothed as vector strokes ---------------- */
-const ink = document.getElementById('ink');
-const ictx = ink.getContext('2d');
-let strokes = null;
-function sizeInk() {
-  const d = Math.min(window.devicePixelRatio, 3);
-  ink.width = Math.round(window.innerWidth * d); ink.height = Math.round(window.innerHeight * d);
-  ictx.setTransform(d, 0, 0, d, 0, 0);
-  strokes = null;
-}
-function drawInk(alpha) {
-  ictx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  if (!strokes || alpha <= 0) return;
-  const c = pass.colors();
-  ictx.globalAlpha = alpha;
-  ictx.lineCap = 'round'; ictx.lineJoin = 'round';
-  ictx.lineWidth = +stroke.value;
-  for (const [list, color] of [[strokes.crease, c.lo], [strokes.muscle, c.mid]]) {
-    ictx.strokeStyle = color;
-    ictx.beginPath();
-    for (const p of list) {
-      ictx.moveTo(p[0][0], p[0][1]);
-      for (let i = 1; i < p.length - 1; i++) {
-        ictx.quadraticCurveTo(p[i][0], p[i][1], (p[i][0] + p[i + 1][0]) / 2, (p[i][1] + p[i + 1][1]) / 2);
-      }
-      const l = p[p.length - 1];
-      ictx.lineTo(l[0], l[1]);
-    }
-    ictx.stroke();
-  }
-  ictx.globalAlpha = 1;
-}
-window.addEventListener('resize', sizeInk);
-sizeInk();
-
 /* ---- loop ------------------------------------------------------------------- */
 const fmt = (n, w) => String(Math.round(n)).padStart(w, '0');
 let prev = performance.now(), lastText = '', lastKey = '';
@@ -234,10 +195,5 @@ renderer.setAnimationLoop(now => {
   // draw only when something changed: the angle, the hover, the look, the size
   const sig = `${spin.rotation.y.toFixed(5)}|${lookVersion}`;
   const key = `${sig}|${hot}`;
-  if (key !== lastKey) {
-    const traced = pass.render(scene, camera, hot, { prune: continuous ? 1 : 0, sig });
-    if (traced) strokes = traced;
-    drawInk(continuous ? 1 : 0);
-    lastKey = key;
-  }
+  if (key !== lastKey) { pass.render(scene, camera, hot); lastKey = key; }
 });
