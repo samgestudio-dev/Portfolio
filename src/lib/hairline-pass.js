@@ -34,11 +34,12 @@ const idVert = /* glsl */`
   #ifdef HAS_FORM
   attribute vec3 _formnormal;
   #endif
+  uniform float uDepthBias;
   varying vec3 vN; varying float vD; varying float vF;
   void main() {
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vN = normalize(normalMatrix * normal);
-    vD = -mv.z;
+    vD = -mv.z - uDepthBias;   // a bias keeps the depth small, where half floats are fine
     #ifdef HAS_FORM
     vec3 fn = normalize(normalMatrix * normalize(_formnormal));
     vF = max(0.0, dot(fn, normalize(vec3(-0.15, 0.3, 1.0))));   // n·l, the light just above the eye
@@ -51,11 +52,12 @@ const idVert = /* glsl */`
     gl_Position = projectionMatrix * mv;
   }`;
 const idFrag = /* glsl */`
-  uniform float uId; varying vec3 vN; varying float vD; varying float vF;
+  uniform float uId, uFill; varying vec3 vN; varying float vD; varying float vF;
   void main() {
     vec3 n = normalize(vN);
     if (!gl_FrontFacing) n = -n;
-    gl_FragColor = vec4(n.xy, uId + clamp(vF, 0.0, 1.0) * 0.9, vD);
+    // the fraction beside the id: the form shading, or 0.45 for a skeleton fill
+    gl_FragColor = vec4(n.xy, uId + (uFill > 0.5 ? 0.45 : clamp(vF, 0.0, 1.0) * 0.9), vD);
   }`;
 
 const common = /* glsl */`
@@ -96,8 +98,9 @@ const valleyFrag = /* glsl */`
 const lineFrag = /* glsl */`
   ${common}
   uniform sampler2D tV; uniform float uR;
-  uniform float uCrease, uDepth, uHot, uForm, uFormOn, uDebug, uWorldPx;
+  uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
+  bool isHot(float i) { return i > uHotLo - 0.5 && i < uHotHi + 0.5; }
   vec3 nrm(vec4 s) { return vec3(s.xy, sqrt(max(0.0, 1.0 - dot(s.xy, s.xy)))); }
   // the valley map, lightly blurred so speckle does not become a crest of its own
   float V(vec2 uv) {
@@ -116,7 +119,7 @@ const lineFrag = /* glsl */`
   void main() {
     vec4 c = texture2D(tN, vUv);
     bool cb = c.a <= 0.0;
-    float sil = 0.0, occ = 0.0, cre = 0.0, hot = 0.0, frm = 0.0;
+    float sil = 0.0, occ = 0.0, cre = 0.0, hot = 0.0, hotIn = 0.0, frm = 0.0;
     float id = oid(c);
     vec3 nc = nrm(c);
     // Outline and contours, antialiased analytically and of one width at any angle.
@@ -142,11 +145,18 @@ const lineFrag = /* glsl */`
       if (cb && nb) continue;
       if (cb != nb) {
         nSil += 1.0;
-        if (abs((cb ? oid(n) : id) - uHot) < 0.5) hot = 1.0;
+        if (isHot(cb ? oid(n) : id)) hot = 1.0;
         continue;
       }
-      if (abs(id - oid(n)) > 0.5) { nPart += 1.0; continue; }                     // two parts meet: always a line
-      if (n.a - (c.a + dot(slope, dir * R * uWorldPx)) > jump) nOcc += 1.0;        // this part in front of another
+      // the chosen part's whole outline is bright, also where it lies over another part:
+      // the side that is nearer owns the line
+      bool near = n.a > c.a;
+      if (abs(id - oid(n)) > 0.5) {                                               // two parts meet: always a line
+        nPart += 1.0;
+        if (near ? isHot(id) : isHot(oid(n))) hotIn = 1.0;
+        continue;
+      }
+      if (n.a - (c.a + dot(slope, dir * R * uWorldPx)) > jump) { nOcc += 1.0; if (isHot(id)) hotIn = 1.0; } // this part in front of another
     }
     if (nSil > 0.0) sil = clamp(uR + 0.5 - R * cos(3.14159265 * min(nSil / 16.0, 0.5)), 0.0, 1.0);
     if (nOcc > 0.0) occ = clamp(2.0 * uR + 0.5 - R * cos(3.14159265 * min(nOcc / 16.0, 0.5)), 0.0, 1.0);
@@ -193,8 +203,12 @@ const lineFrag = /* glsl */`
     // for what the pointer chose. Inside lines give way within a stroke or two of the
     // outline, so two lines never merge into one twice as thick.
     float inner = max(max(cre, frm), occ) * (1.0 - step(0.5, nSil));
-    vec3 col = cPlate;
-    col = mix(col, cMid, max(inner, part));
+    // a skeleton fill (the leaves of an interface) sits in lo, Hairline's colour for an
+    // unlit dot; every other surface is the plate
+    float fr = cb ? 0.0 : c.b - id;
+    vec3 col = (id > 1.5 && fr > 0.3 && fr < 0.6) ? cLo : cPlate;
+    col = mix(col, cMid, inner);
+    col = mix(col, mix(cMid, cHi, hotIn), max(part, occ * hotIn));
     col = mix(col, mix(cEdge, cHi, hot), sil);
     if (uDebug > 0.5 && !cb) col = mix(cPlate, cHi, clamp(V(vUv) * 8.0, 0.0, 1.0));
     gl_FragColor = vec4(col, 1.0);
@@ -203,7 +217,41 @@ const lineFrag = /* glsl */`
 
 const quadVert = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 
-export function createHairlinePass(renderer) {
+// Dashed guides, the way an exploded drawing runs a dotted line from one layer to the
+// next: screen-space strips one stroke wide, in mid, hidden wherever a surface of the
+// G-buffer lies in front of them (rule 06: a plate hides the guides behind it).
+const guideVert = /* glsl */`
+  attribute vec3 aB; attribute vec2 aSide;
+  uniform vec2 uRes; uniform float uR, uDepthBias;
+  varying float vAlong; varying float vAcross; varying float vD;
+  void main() {
+    vec4 a = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 b = projectionMatrix * modelViewMatrix * vec4(aB, 1.0);
+    vec4 here = aSide.y < 0.5 ? a : b;
+    vec2 d = (b.xy - a.xy) * uRes * 0.5;
+    float len = max(length(d), 1e-4);
+    vec2 nrm = vec2(-d.y, d.x) / len;
+    float w = uR + 1.0;
+    vAlong = aSide.y * len; vAcross = aSide.x * w;
+    vec4 mv = modelViewMatrix * vec4(aSide.y < 0.5 ? position : aB, 1.0);
+    vD = -mv.z - uDepthBias;
+    gl_Position = here + vec4(nrm * aSide.x * w / (uRes * 0.5) * here.w, 0.0, 0.0);
+  }`;
+const guideFrag = /* glsl */`
+  uniform sampler2D tN; uniform vec2 uRes; uniform float uR, uDash, uOpacity;
+  uniform vec3 cMid;
+  varying float vAlong; varying float vAcross; varying float vD;
+  void main() {
+    vec4 s = texture2D(tN, gl_FragCoord.xy / uRes);
+    if (s.a > 0.0 && s.a < vD - 0.002) discard;               // behind a plate
+    float on = step(mod(vAlong, uDash * 4.0), uDash * 1.4);    // a dotted run, 1 on : 3 off
+    float a = clamp(uR + 0.5 - abs(vAcross), 0.0, 1.0) * on * uOpacity;
+    if (a <= 0.0) discard;
+    gl_FragColor = vec4(cMid, a);
+    #include <colorspace_fragment>
+  }`;
+
+export function createHairlinePass(renderer, { depthBias = 0 } = {}) {
   const opts = { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
   const rt = new THREE.WebGLRenderTarget(2, 2, { ...opts, depthBuffer: true });
   // the valley map is read between pixels (gradient, crest test), so it filters linearly
@@ -214,7 +262,7 @@ export function createHairlinePass(renderer) {
   const valleyUniforms = { ...shared, uFormR: { value: 10 } };
   const uniforms = {
     ...shared, tV: { value: rtV.texture }, uR: { value: 1.5 },
-    uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHot: { value: -1 }, uWorldPx: { value: 0.001 },
+    uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHotLo: { value: -1 }, uHotHi: { value: -1 }, uWorldPx: { value: 0.001 },
     uForm: { value: 0.02 }, uFormOn: { value: 1 },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
     cPlate: { value: col('plate') }, cHi: { value: col('hi') }, cEdge: { value: col('edge') },
@@ -229,6 +277,11 @@ export function createHairlinePass(renderer) {
   };
   const valleyScene = quad(valleyFrag, valleyUniforms);
   const lineScene = quad(lineFrag, uniforms);
+  const biasU = { value: depthBias };
+  const guideUniforms = {
+    tN: shared.tN, uRes: { value: new THREE.Vector2(2, 2) }, uR: uniforms.uR, uDepthBias: biasU,
+    uDash: { value: 2 }, uOpacity: { value: 1 }, cMid: uniforms.cMid,
+  };
   const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   let ratio = 1, strokePx = 1;
   const clear = new THREE.Color(0, 0, 0);
@@ -236,15 +289,19 @@ export function createHairlinePass(renderer) {
 
   return {
     // form: true for a mesh that carries the baked _formnormal attribute
-    material(id, { form = false } = {}) {
+    // fill: true for a skeleton leaf, painted lo instead of the plate
+    material(id, { form = false, fill = false } = {}) {
       return new THREE.ShaderMaterial({
-        uniforms: { uId: { value: id } }, vertexShader: idVert, fragmentShader: idFrag, side: THREE.DoubleSide,
+        uniforms: { uId: { value: id }, uFill: { value: fill ? 1 : 0 }, uDepthBias: biasU },
+        vertexShader: idVert, fragmentShader: idFrag, side: THREE.DoubleSide,
         defines: form ? { HAS_FORM: '' } : {},
       });
     },
     setSize(w, h, pixelRatio) {
       rt.setSize(w, h); rtV.setSize(w, h); ratio = pixelRatio;
       shared.uTexel.value.set(1 / w, 1 / h);
+      guideUniforms.uRes.value.set(w, h);
+      guideUniforms.uDash.value = 1.4 * pixelRatio;
       uniforms.uR.value = strokeR();
       valleyUniforms.uFormR.value = 5 * ratio;      // ~5 CSS px: a muscle valley on screen
     },
@@ -263,12 +320,45 @@ export function createHairlinePass(renderer) {
     },
     // world units per buffer pixel, so the depth plane can be extended across the ring
     setScale(worldPerPx) { uniforms.uWorldPx.value = worldPerPx; },
-    render(scene, camera, hotId) {
-      uniforms.uHot.value = hotId || -1;
+    // segments: [[a, b], ...] in the parent's space; returns a mesh to add to the scene
+    // graph (for its transform) and to pass to render as the overlay
+    guides(segments) {
+      const n = segments.length, pos = new Float32Array(n * 12), bb = new Float32Array(n * 12), side = new Float32Array(n * 8), idx = [];
+      segments.forEach(([a, b], i) => {
+        for (let k = 0; k < 4; k++) {
+          pos.set([a.x, a.y, a.z], (i * 4 + k) * 3); bb.set([b.x, b.y, b.z], (i * 4 + k) * 3);
+          side.set([k % 2 ? 1 : -1, k < 2 ? 0 : 1], (i * 4 + k) * 2);
+        }
+        const o = i * 4; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2);
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('aB', new THREE.BufferAttribute(bb, 3));
+      g.setAttribute('aSide', new THREE.BufferAttribute(side, 2));
+      g.setIndex(idx);
+      const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
+        uniforms: guideUniforms, vertexShader: guideVert, fragmentShader: guideFrag,
+        transparent: true, depthTest: false, depthWrite: false,
+      }));
+      m.frustumCulled = false;
+      m.layers.set(1);   // kept out of the G-buffer
+      return m;
+    },
+    setGuideOpacity(a) { guideUniforms.uOpacity.value = a; },
+    // hot: an id, or [lo, hi], a run of ids that is one thing
+    render(scene, camera, hot, overlay) {
+      const [lo, hi] = Array.isArray(hot) ? hot : [hot || -1, hot || -1];
+      uniforms.uHotLo.value = lo; uniforms.uHotHi.value = hi;
       renderer.setClearColor(clear, 0);
       renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, camera);
       renderer.setRenderTarget(rtV); renderer.render(valleyScene, quadCam);
       renderer.setRenderTarget(null); renderer.render(lineScene, quadCam);
+      if (overlay && guideUniforms.uOpacity.value > 0.001) {
+        const ac = renderer.autoClear, mask = camera.layers.mask;
+        renderer.autoClear = false; camera.layers.set(1);
+        renderer.render(overlay, camera);
+        camera.layers.mask = mask; renderer.autoClear = ac;
+      }
     },
   };
 }
