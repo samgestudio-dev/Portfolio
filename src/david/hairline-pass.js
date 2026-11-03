@@ -102,6 +102,14 @@ const lineFrag = /* glsl */`
     return 0.4 * texture2D(tV, uv).r + 0.15 * (texture2D(tV, uv + vec2(o.x, 0.0)).r + texture2D(tV, uv - vec2(o.x, 0.0)).r
                                              + texture2D(tV, uv + vec2(0.0, o.y)).r + texture2D(tV, uv - vec2(0.0, o.y)).r);
   }
+  // the turn of the surface across uv: 1 − cos of the angle between the normals at uv ± d,
+  // or 0 when either side is off this solid or across a fold (that is a contour's job)
+  float turnAt(vec2 uv, vec2 d, float id, float jump) {
+    vec4 a = texture2D(tN, uv + d), b = texture2D(tN, uv - d);
+    if (a.a <= 0.0 || b.a <= 0.0 || abs(oid(a) - id) > 0.5 || abs(oid(b) - id) > 0.5) return 0.0;
+    if (abs(a.a - b.a) > 2.0 * jump) return 0.0;
+    return 1.0 - dot(nrm(a), nrm(b));
+  }
   void main() {
     vec4 c = texture2D(tN, vUv);
     bool cb = c.a <= 0.0;
@@ -110,9 +118,12 @@ const lineFrag = /* glsl */`
     vec3 nc = nrm(c);
     // Outline and contours, antialiased analytically and of one width at any angle.
     // Sixteen taps on a ring of radius R: the share f of taps across a boundary gives
-    // the distance to it, d = R·cos(π·f) (exact for a straight edge). The line is drawn
-    // centred on the boundary with half-width uR, and its edge is a one-pixel ramp.
-    float R = uR + 1.5, nSil = 0.0, nOcc = 0.0, nCre = 0.0;
+    // the distance to it, d = R·cos(π·f) (exact for a straight edge), and the ink is a
+    // band of the stroke's width with a one-pixel ramp.
+    //   outline  centred on the boundary (half inside, half outside)
+    //   contour  on the near side only, the way a pen follows the edge of the part in
+    //            front, so it is never inked on both sides of a fold
+    float R = 2.0 * uR + 1.5, nSil = 0.0, nOcc = 0.0;
     // the depth slope of the surface at this pixel, from its normal (orthographic eye):
     // a smooth surface lands on this plane; a fold in front of another part does not
     vec2 slope = nc.xy / max(nc.z, 0.25);
@@ -130,14 +141,31 @@ const lineFrag = /* glsl */`
         if (abs((cb ? oid(n) : id) - uHot) < 0.5) hot = 1.0;
         continue;
       }
-      float expected = c.a + dot(slope, dir * R * uWorldPx);
-      if (abs(id - oid(n)) > 0.5 || abs(n.a - expected) > jump) { nOcc += 1.0; continue; }  // another solid, or one part in front of another
-      if (1.0 - dot(nc, nrm(n)) > uCrease) nCre += 1.0;     // the surface turns sharply: a crease
+      if (abs(id - oid(n)) > 0.5) { if (c.a < n.a) nOcc += 1.0; continue; }       // this solid in front of another
+      if (n.a - (c.a + dot(slope, dir * R * uWorldPx)) > jump) nOcc += 1.0;        // this part in front of another
     }
-    if (nSil > 0.0) sil = clamp(uR + 0.5 - abs(R * cos(3.14159265 * min(nSil / 16.0, 0.5))), 0.0, 1.0);
-    if (nOcc > 0.0) occ = clamp(uR + 0.5 - abs(R * cos(3.14159265 * min(nOcc / 16.0, 0.5))), 0.0, 1.0);
-    // a crease is drawn like an edge: the same width, the same ramp
-    if (nCre > 0.0) cre = clamp(uR + 0.5 - abs(R * cos(3.14159265 * min(nCre / 16.0, 0.5))), 0.0, 1.0);
+    if (nSil > 0.0) sil = clamp(uR + 0.5 - R * cos(3.14159265 * min(nSil / 16.0, 0.5)), 0.0, 1.0);
+    if (nOcc > 0.0) occ = clamp(2.0 * uR + 0.5 - R * cos(3.14159265 * min(nOcc / 16.0, 0.5)), 0.0, 1.0);
+
+    // Creases: how far the surface turns across this pixel, read as the angle between
+    // the normals one stroke either side, in eight directions. Only the crest of that
+    // turn is inked (it must not be beaten one stroke further on either side), so a
+    // rounded fold, which turns over a wide band, still draws as one stroke.
+    if (!cb) {
+      float rc = max(1.0, uR), best = 0.0;
+      vec2 bdir = vec2(1.0, 0.0);
+      for (int k = 0; k < 8; k++) {
+        float a = float(k) * 0.392699;
+        vec2 dir = vec2(cos(a), sin(a));
+        float t = turnAt(vUv, dir * rc * uTexel, id, jump);
+        if (t > best) { best = t; bdir = dir; }
+      }
+      if (best > uCrease) {
+        vec2 o = bdir * max(1.0, 2.0 * uR) * uTexel, d = bdir * rc * uTexel;
+        float tp = turnAt(vUv + o, d, id, jump), tm = turnAt(vUv - o, d, id, jump);
+        if (best >= tp && best >= tm) cre = smoothstep(uCrease, uCrease * 1.25, best);
+      }
+    }
     if (!cb) {
       // muscle lines: keep only the crest of the valley map, across its gradient
       float v = V(vUv);
@@ -151,9 +179,12 @@ const lineFrag = /* glsl */`
         if (v >= V(vUv + o) && v >= V(vUv - o)) frm = smoothstep(uForm, uForm * 1.5, v);
       }
     }
-    // one ink for every line: outline, contours, creases and muscle lines alike
+    // one ink for every line: outline, contours, creases and muscle lines alike. Inside
+    // lines give way within a stroke or two of the outline, so two lines never merge
+    // into one twice as thick.
+    float inner = max(max(cre, frm), occ) * (1.0 - step(0.5, nSil));
     vec3 col = cPlate;
-    col = mix(col, cEdge, max(max(cre, frm), occ));
+    col = mix(col, cEdge, inner);
     col = mix(col, mix(cEdge, cHi, hot), sil);
     if (uDebug > 0.5 && !cb) col = mix(cPlate, cHi, clamp(V(vUv) * 8.0, 0.0, 1.0));
     gl_FragColor = vec4(col, 1.0);
