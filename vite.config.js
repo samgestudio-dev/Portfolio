@@ -13,6 +13,7 @@ export default defineConfig({
         spacing: resolve(import.meta.dirname, 'spacing.html'),
         springs: resolve(import.meta.dirname, 'springs.html'),
         flipbook: resolve(import.meta.dirname, 'flipbook.html'),
+        atlas: resolve(import.meta.dirname, 'atlas.html'),
       },
     },
   },
