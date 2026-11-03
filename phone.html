@@ -12,24 +12,37 @@
     <style>
       :root {
         --paper: #f4f2eb; --ink: #292922; --muted: #76766b; --accent: #bc422c; --rule: #deddd3;
+        /* Hairline's inks, on David's page colour */
+        --hl-hi: #232327; --hl-edge: #a4a4ac; --hl-mid: #c3c3c9; --hl-lo: #e0e0e4; --hl-sw: 0.9;
         color-scheme: light;
       }
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme="light"]) {
-          --paper: #131311; --ink: #eceae1; --muted: #8b8a80; --accent: #e0674f; --rule: #2a2a26;
+          --paper: #131311; --ink: #eceae1; --muted: #8b8a80; --accent: #e0674f; --rule: #2a2a26; --hl-hi: #d0d6e0; --hl-edge: #5b5d64; --hl-mid: #3e3e44; --hl-lo: #29292d;
           color-scheme: dark;
         }
       }
       :root[data-theme="dark"] {
-        --paper: #131311; --ink: #eceae1; --muted: #8b8a80; --accent: #e0674f; --rule: #2a2a26;
+        --paper: #131311; --ink: #eceae1; --muted: #8b8a80; --accent: #e0674f; --rule: #2a2a26; --hl-hi: #d0d6e0; --hl-edge: #5b5d64; --hl-mid: #3e3e44; --hl-lo: #29292d;
         color-scheme: dark;
       }
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font-family: 'DM Sans', system-ui, sans-serif; }
       body { overflow: hidden; transition: background .4s cubic-bezier(.32,.72,0,1), color .4s cubic-bezier(.32,.72,0,1); }
       .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
-      canvas { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; touch-action: none; cursor: grab; }
-      canvas.dragging { cursor: grabbing; }
+      #stage { position: fixed; left: 0; right: 0; top: 64px; width: 100vw; height: calc(100dvh - 200px); display: block; touch-action: none; cursor: grab; outline: none; }
+      #stage.dragging { cursor: grabbing; }
+      #stage:focus-visible { outline: 1.5px solid var(--hl-hi); outline-offset: -4px; }
+      /* the drawing, as Hairline paints it: plates filled with the ground, one stroke width */
+      #stage path { fill: var(--paper); stroke: var(--hl-mid); stroke-width: var(--hl-sw); vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; transition: stroke 260ms cubic-bezier(.5, 0, .1, 1); }
+      #stage .sil { stroke: var(--hl-edge); }
+      #stage .cr { fill: none; stroke: var(--hl-lo); }
+      #stage .fill { fill: var(--hl-lo); stroke: none; }
+      #stage .mk { fill: none; stroke: var(--hl-mid); }
+      #stage .dot { fill: var(--hl-mid); stroke: none; }
+      #stage .hi { stroke: var(--hl-hi); }
+      #stage .fill.hi { stroke: var(--hl-hi); }
+      #stage .guide { fill: none; stroke: var(--hl-mid); stroke-dasharray: 0.7 2.1; }
       header { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: baseline; padding-block: calc(22px + env(safe-area-inset-top, 0px)) 0; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); pointer-events: none; }
       header h1 { margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; }
       header span { font-size: 10px; color: var(--muted); }
@@ -55,13 +68,12 @@
     </style>
   </head>
   <body>
-    <canvas id="stage" aria-label="An iPhone Air on a turntable, drawn in thin lines. Hover or tap to take it apart in layers; up and down arrows walk the layers; drag sideways or use left and right arrows to turn it." tabindex="0"></canvas>
+    <svg id="stage" role="img" aria-label="An iPhone Air on a turntable, drawn in thin lines. Hover or tap to take it apart in layers; up and down arrows walk the layers; drag sideways or use left and right arrows to turn it." tabindex="0" preserveAspectRatio="xMidYMid meet"></svg>
     <header>
       <h1>iPhone Air — in layers</h1>
       <span class="mono">Product · 02</span>
     </header>
-    <span class="credit mono">Model: Ranguel · CC BY 4.0</span>
-    <div class="loading mono" id="loading">loading model…</div>
+    <span class="credit mono">After Ranguel’s model · CC BY 4.0</span>
     <div class="bottom">
     <div class="readout mono" id="readout" aria-live="off">θ 000° · face <b>1</b>/4 · rest</div>
     <p class="idea">Hover and it comes apart along one axis: the hardware back to front, then the interface, one layer per depth of nesting.</p>
