@@ -130,8 +130,10 @@ function draw(o, f, hot) {
       if (p.plane) p.sil.setAttribute('d', flat(P, fr, p.ring, p.w0));
       else { const d = prism3(P, T, fr, p.ring, p.inner, p.w0, p.w1); p.sil.setAttribute('d', d.sil); p.cr.setAttribute('d', d.crease); }
       // parts stack along their own axis (the plateau on the back, the lens on the
-      // plateau, a button off a side): order them by how far along it they stand
-      const c = at(fr, p.cu, p.cv, (p.w0 + p.w1) / 2), w = p.frame.W;
+      // plateau, a button off a side): order them by how far along it they stand within
+      // their layer, before the layer moves (its move along y would outweigh a button's
+      // reach along x and paint the slab over the buttons)
+      const c = at(p.frame, p.cu, p.cv, (p.w0 + p.w1) / 2), w = p.frame.W;
       p.depth = (T[0] * w[0] + T[1] * w[1]) * (c[0] * w[0] + c[1] * w[1]);
       p.sil.classList.toggle('hi', hot === G.i || (hot === 'primary' && p === primary));
     }
@@ -295,7 +297,7 @@ function stepTour(dt) {
 
 // ?open&act=n opens on layer n at once, ?turn=n turns n quarters: for still pictures
 {
-  const q = location.search, m = q.match(/[?&]act=(\d+)/), t = q.match(/[?&]turn=(\d+)/);
+  const q = location.search, m = q.match(/[?&]act=(\d+)/), t = q.match(/[?&]turn=([\d.]+)/);
   if (/[?&]open/.test(q)) {
     pinned = true; tourOn = false; open = true; act = m ? +m[1] : -1; retarget(MIDDLE);
     springs.forEach(s => { s.due.forEach(([, k, v]) => { s[k].x = s[k].t = v; }); s.due = []; });
