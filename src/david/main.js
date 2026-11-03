@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { createTurntable, QUARTER } from '../lib/turntable.js';
+import { createTurntable, bindWheel, QUARTER } from '../lib/turntable.js';
 import { createHairlinePass } from '../lib/hairline-pass.js';
 
 /* ---- stage ------------------------------------------------------------------ */
@@ -138,6 +138,7 @@ const release = e => {
 canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('pointerleave', () => { if (!dragging) hot = 0; });
+bindWheel(canvas, table);
 canvas.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') { table.flickBy(1); e.preventDefault(); }
   if (e.key === 'ArrowLeft') { table.flickBy(-1); e.preventDefault(); }

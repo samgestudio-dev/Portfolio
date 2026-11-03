@@ -1,4 +1,4 @@
-import { createTurntable } from '../lib/turntable.js';
+import { createTurntable, bindWheel } from '../lib/turntable.js';
 import { Cam, proj, toward, prism3, flat, hull, inside, seg, circ, at, clamp, lerp } from '../lib/iso.js';
 import { buildParts, buildPlatter, LAYERS, OUTLINE, H, W, R, SCREEN_FRONT, PLATTER_R } from './scene.js';
 
@@ -117,7 +117,8 @@ const shift = (fr, dy) => ({ ...fr, o: [fr.o[0], fr.o[1] + dy, fr.o[2]] });
 
 /* ---- drawing ---------------------------------------------------------------- */
 // the turntable turns the camera, as Hairline's own does; the platter is round
-function setAz() { C.az = (45 * Math.PI) / 180 + table.theta; }
+// (the camera turns the other way to the platter, so a drag to the right carries the near edge right, as on David)
+function setAz() { C.az = (45 * Math.PI) / 180 - table.theta; }
 function draw(o, f, hot) {
   setAz();
   const P = proj(C), T = toward(C), key = (x, y) => T[0] * x + T[1] * y;
@@ -241,6 +242,8 @@ const release = e => {
 svg.addEventListener('pointerup', release);
 svg.addEventListener('pointercancel', release);
 svg.addEventListener('pointerleave', e => { pointerIn = false; if (e.pointerType === 'mouse' && !dragging && !pinned) setOpen(false); });
+// a trackpad's sideways swipe turns it, and counts as a hand on it
+bindWheel(svg, table, { onStart: () => { idle = 0; stopTour(); } });
 svg.addEventListener('keydown', e => {
   const k = e.key;
   if (k === 'ArrowRight' || k === 'ArrowLeft') { table.flickBy(k === 'ArrowRight' ? 1 : -1); e.preventDefault(); }

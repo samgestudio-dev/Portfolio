@@ -69,3 +69,27 @@ export function createTurntable({ tour = true } = {}) {
     },
   };
 }
+
+/* A trackpad's two-finger swipe turns the platter as a hand on it would: the swipe is a
+   drag (θ follows it, ω is measured from it), and when the events stop for a moment —
+   fingers lifted and the system's own momentum spent — it is released to coast, and the
+   detent catches it. Only a sideways swipe: one that is mostly vertical, or a pinch
+   (ctrlKey), is left to the page. */
+export function bindWheel(el, table, { onStart } = {}) {
+  let active = false, last = 0, timer = 0;
+  el.addEventListener('wheel', e => {
+    if (e.ctrlKey) return;
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerWidth : 1;
+    const dx = e.deltaX * k, dy = e.deltaY * k;
+    if (Math.abs(dx) <= Math.abs(dy)) return;
+    e.preventDefault();
+    const now = performance.now();
+    if (!active) { active = true; table.grab(); onStart?.(); last = now - 16; }
+    // fingers moving left scroll the content left (deltaX > 0): the platter's near edge goes with them
+    table.drag((-dx / Math.min(window.innerWidth, 900)) * Math.PI * 1.2, Math.max(1, now - last) / 1000);
+    last = now;
+    clearTimeout(timer);
+    timer = setTimeout(() => { active = false; table.release(); }, 80);
+  }, { passive: false });
+  return () => active;
+}
