@@ -29,6 +29,11 @@ const THEMES = {
   light: { plate: '#f4f2eb', hi: '#232327', edge: '#a4a4ac', mid: '#c3c3c9', lo: '#e0e0e4' },
   dark:  { plate: '#131311', hi: '#d0d6e0', edge: '#5b5d64', mid: '#3e3e44', lo: '#29292d' },
 };
+// Hairline exactly, plates included: for a page whose ground is Hairline's own
+const HAIRLINE = {
+  light: { plate: '#ffffff', hi: '#232327', edge: '#a4a4ac', mid: '#c3c3c9', lo: '#e0e0e4' },
+  dark:  { plate: '#08090a', hi: '#d0d6e0', edge: '#5b5d64', mid: '#3e3e44', lo: '#29292d' },
+};
 
 const idVert = /* glsl */`
   #ifdef HAS_FORM
@@ -100,6 +105,8 @@ const lineFrag = /* glsl */`
   uniform sampler2D tV; uniform float uR;
   uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
+  uniform float uHair;
+  bool isFill(vec4 s) { float i = oid(s), f = s.b - i; return s.a > 0.0 && i > 1.5 && f > 0.3 && f < 0.6; }
   bool isHot(float i) { return i > uHotLo - 0.5 && i < uHotHi + 0.5; }
   vec3 nrm(vec4 s) { return vec3(s.xy, sqrt(max(0.0, 1.0 - dot(s.xy, s.xy)))); }
   // the valley map, lightly blurred so speckle does not become a crest of its own
@@ -120,6 +127,8 @@ const lineFrag = /* glsl */`
     vec4 c = texture2D(tN, vUv);
     bool cb = c.a <= 0.0;
     float sil = 0.0, occ = 0.0, cre = 0.0, hot = 0.0, hotIn = 0.0, frm = 0.0;
+    float silOwn = 0.0, partOwn = 0.0;   // Hairline style: an outline whose owner is a solid, not a skeleton fill
+    bool cFill = isFill(c);
     float id = oid(c);
     vec3 nc = nrm(c);
     // Outline and contours, antialiased analytically and of one width at any angle.
@@ -146,6 +155,7 @@ const lineFrag = /* glsl */`
       if (cb != nb) {
         nSil += 1.0;
         if (isHot(cb ? oid(n) : id)) hot = 1.0;
+        if (!(cb ? isFill(n) : cFill)) silOwn = 1.0;
         continue;
       }
       // the chosen part's whole outline is bright, also where it lies over another part:
@@ -154,6 +164,7 @@ const lineFrag = /* glsl */`
       if (abs(id - oid(n)) > 0.5) {                                               // two parts meet: always a line
         nPart += 1.0;
         if (near ? isHot(id) : isHot(oid(n))) hotIn = 1.0;
+        if (!(near ? cFill : isFill(n))) partOwn = 1.0;
         continue;
       }
       if (n.a - (c.a + dot(slope, dir * R * uWorldPx)) > jump) { nOcc += 1.0; if (isHot(id)) hotIn = 1.0; } // this part in front of another
@@ -207,9 +218,19 @@ const lineFrag = /* glsl */`
     // unlit dot; every other surface is the plate
     float fr = cb ? 0.0 : c.b - id;
     vec3 col = (id > 1.5 && fr > 0.3 && fr < 0.6) ? cLo : cPlate;
-    col = mix(col, cMid, inner);
-    col = mix(col, mix(cMid, cHi, hotIn), max(part, occ * hotIn));
-    col = mix(col, mix(cEdge, cHi, hot), sil);
+    if (uHair > 0.5) {
+      // Hairline's hierarchy: every solid has its silhouette in edge, where it meets the
+      // plate and where it lies over another solid; its creases in lo; a skeleton fill has
+      // no stroke of its own, like Hairline's dots; the chosen thing's outline is hi
+      col = mix(col, cLo, max(cre, frm) * (1.0 - step(0.5, nSil)));
+      float own = max(part, occ * (1.0 - step(0.5, nSil)));
+      col = mix(col, mix(mix(cLo, cEdge, max(partOwn, occ > 0.0 && !cFill ? 1.0 : 0.0)), cHi, hotIn), own);
+      col = mix(col, mix(mix(cLo, cEdge, silOwn), cHi, hot), sil);
+    } else {
+      col = mix(col, cMid, inner);
+      col = mix(col, mix(cMid, cHi, hotIn), max(part, occ * hotIn));
+      col = mix(col, mix(cEdge, cHi, hot), sil);
+    }
     if (uDebug > 0.5 && !cb) col = mix(cPlate, cHi, clamp(V(vUv) * 8.0, 0.0, 1.0));
     gl_FragColor = vec4(col, 1.0);
     #include <colorspace_fragment>
@@ -251,19 +272,21 @@ const guideFrag = /* glsl */`
     #include <colorspace_fragment>
   }`;
 
-export function createHairlinePass(renderer, { depthBias = 0 } = {}) {
+// style 'hairline': Hairline's own palette and line hierarchy (see the line pass)
+export function createHairlinePass(renderer, { depthBias = 0, style = 'study' } = {}) {
+  const PALETTES = style === 'hairline' ? HAIRLINE : THEMES;
   const opts = { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
   const rt = new THREE.WebGLRenderTarget(2, 2, { ...opts, depthBuffer: true });
   // the valley map is read between pixels (gradient, crest test), so it filters linearly
   const rtV = new THREE.WebGLRenderTarget(2, 2, { ...opts, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
-  const theme = { ...THEMES.light };
+  const theme = { ...PALETTES.light };
   const col = k => new THREE.Color(theme[k]);
   const shared = { tN: { value: rt.texture }, uTexel: { value: new THREE.Vector2() } };
   const valleyUniforms = { ...shared, uFormR: { value: 10 } };
   const uniforms = {
     ...shared, tV: { value: rtV.texture }, uR: { value: 1.5 },
     uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHotLo: { value: -1 }, uHotHi: { value: -1 }, uWorldPx: { value: 0.001 },
-    uForm: { value: 0.02 }, uFormOn: { value: 1 },
+    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
     cPlate: { value: col('plate') }, cHi: { value: col('hi') }, cEdge: { value: col('edge') },
     cMid: { value: col('mid') }, cLo: { value: col('lo') },
@@ -315,7 +338,7 @@ export function createHairlinePass(renderer, { depthBias = 0 } = {}) {
       uniforms.uFormOn.value = muscle > 0.001 ? 1 : 0;
     },
     setTheme(name) {
-      Object.assign(theme, THEMES[name]);
+      Object.assign(theme, PALETTES[name]);
       for (const k of ['plate', 'hi', 'edge', 'mid', 'lo']) uniforms['c' + k[0].toUpperCase() + k.slice(1)].value.set(theme[k]);
     },
     // world units per buffer pixel, so the depth plane can be extended across the ring

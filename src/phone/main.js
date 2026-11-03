@@ -35,7 +35,7 @@ camera.position.set(Math.sin(az) * Math.cos(el) * dist, target.y + Math.sin(el) 
 camera.lookAt(target);
 
 // depths stored relative to the camera's distance, so half floats hold them to ~0.5 mm
-const pass = createHairlinePass(renderer, { depthBias: dist - 1 });
+const pass = createHairlinePass(renderer, { depthBias: dist - 1, style: 'hairline' });
 
 /* ---- stage ------------------------------------------------------------------ */
 const { base, spin, R } = buildPlatter(pass);
@@ -87,7 +87,7 @@ const table = createTurntable({ tour: false });
 let slow = false, gapK = 1;
 let phone = null;                          // { layers, primary, guides }
 const N = () => phone.layers.length;
-const MIDDLE = 5;                          // the display: where an opening spreads from when nothing is chosen
+const MIDDLE = 2;                          // the display: where an opening spreads from when nothing is chosen
 
 const STEP = 0.045;                        // the stagger, s per layer
 let clock = 0;
@@ -256,7 +256,8 @@ const slowBtn = document.getElementById('slow');
 const themeBtn = document.getElementById('theme');
 const applyLook = () => {
   gapK = THREE.MathUtils.lerp(0.6, 1.2, +gapIn.value);   // at 1.2 the open stack still stands on the platter
-  pass.setLook({ detail: 0.6, stroke: +stroke.value, muscle: 0 });
+  // only real folds are creases (rule 09: one crease, then draw less)
+  pass.setLook({ detail: 0.25, stroke: +stroke.value, muscle: 0 });
   lookVersion++;
 };
 gapIn.addEventListener('input', applyLook);
@@ -274,7 +275,7 @@ function syncTheme() {
   const dark = isDark();
   themeBtn.setAttribute('aria-pressed', dark);
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.content = dark ? '#131311' : '#f4f2eb';
+  if (meta) meta.content = dark ? '#08090a' : '#ffffff';
   pass.setTheme(dark ? 'dark' : 'light');
   lookVersion++;
 }
@@ -285,8 +286,8 @@ syncTheme();
 applyLook();
 
 /* ---- the tour: three stops that each show a different answer, then a leave ----- */
-// open on the interface's content, walk back to the board, then the camera; close; turn
-const TOUR = [[1.6, () => openOn(8)], [3.6, () => setAct(2)], [5.6, () => setAct(1)],
+// open on the interface's content, walk back to the components, then the body; close; turn
+const TOUR = [[1.6, () => openOn(4)], [3.6, () => setAct(1)], [5.6, () => setAct(0)],
   [7.4, () => setOpen(false)], [8.8, () => table.flickBy(1)]];
 let tourT = 0, tourOn = !reduced, tourStep = 0;
 function stopTour() { if (tourOn && tourStep > 0 && !pinned) setOpen(false); tourOn = false; tourT = 0; tourStep = 0; }

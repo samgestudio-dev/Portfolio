@@ -7,8 +7,8 @@ import { UI, UI_LEVELS } from './ui.js';
    the logic board tucked under the camera plateau, a metal-cased battery filling the
    rest, the Taptic Engine and the speaker at the foot.
 
-   Ten layers, back to front, each one group that moves along z only: one axis.
-     back glass · camera · board · battery · frame · display · interface ×4
+   Five layers, back to front, each one group that moves along z only: one axis.
+     body · components · display · interface layout · interface content
    Ids are handed out in that order, so a layer is one run of ids and can be lit
    whole (Hairline rule 04: one highlight may cover the parts of one thing).          */
 
@@ -56,10 +56,11 @@ export function buildPhone(pass, gltfScene, firstId) {
   gltfScene.traverse(o => { if (o.parent && o.parent.name === 'Phone') nodes[key(o.name)] = o; });
   // parts that sit inside a glass and would only flicker against it
   const drop = { Screen: ['Glass Tint', 'Display'] };
-  const take = (L, name) => {
+  // pid: an id to share with a part already taken, for marks too small to be a solid
+  const take = (L, name, shared) => {
     const n = nodes[key(name)];
     if (!n) { console.warn('phone: no node', name); return; }
-    const pid = next();
+    const pid = shared ?? next();
     n.removeFromParent(); n.position.set(0, 0, 0); n.quaternion.identity(); n.scale.set(1, 1, 1);
     const kill = [];
     n.traverse(o => {
@@ -71,56 +72,49 @@ export function buildPhone(pass, gltfScene, firstId) {
     });
     kill.forEach(o => o.removeFromParent());
     own(L, n);
+    return pid;
   };
 
-  /* back glass: the plate with its plateau, the flash and the microphone */
-  const back = layer('back glass', 0);
-  take(back, 'Back Glass'); take(back, 'Back Flash'); take(back, 'Back Mic mesh');
+  /* body: everything at the back, kept together: the back glass with its plateau, flash
+     and microphone, the camera module standing in the plateau, the metal-cased battery,
+     and the titanium frame with its buttons. Port, speaker holes and screw are drawn as
+     part of the frame (rule 09: draw less). */
+  const body = layer('body', 0);
+  take(body, 'Back Glass'); take(body, 'Back Flash'); take(body, 'Back Mic mesh');
+  take(body, 'Back Camera module');
+  { const m = block(pass, next(), [-0.0335, -0.0635, 0.0335, 0.0465], 0.0045, -0.0016, 0.0016); m.userData.id = id - 1; own(body, m); }
+  const band = take(body, 'Body');
+  for (const n of ['USB C port', 'Speaker mesh', 'Screw']) take(body, n, band);
+  for (const n of ['Button Action', 'Button Volume Up', 'Button Volume Down', 'Button Power On/Off', 'Camera Control']) take(body, n);
 
-  /* camera: the 48 MP module that stands in the plateau */
-  const cam = layer('camera', 0.008);
-  take(cam, 'Back Camera module');
-
-  /* board: one stacked board under the plateau, a cut-out where the camera passes, the
-     A19 Pro, C1X modem and N1 chip facing the display, and the front camera */
-  const board = layer('board', 0.008);
+  /* components: one stacked board under the plateau, a cut-out where the camera passes,
+     the A19 Pro, C1X modem and N1 chip facing the display, the front camera, and at the
+     foot the Taptic Engine and the speaker */
+  const parts = layer('components', 0.013);
   {
-    const s = rrect(fx(0.033), 0.0498, fx(-0.033), 0.0766, 0.006);
-    s.holes.push(rrect(fx(0.0302), 0.0554, fx(0.0134), 0.0722, 0.004));
-    const m = new THREE.Mesh(slab(s), pass.material(next()));
+    const sh = rrect(fx(0.033), 0.0498, fx(-0.033), 0.0766, 0.006);
+    sh.holes.push(rrect(fx(0.0302), 0.0554, fx(0.0134), 0.0722, 0.004));
+    const m = new THREE.Mesh(slab(sh), pass.material(next()));
     m.position.z = 0.0005; m.scale.z = 0.0008; m.userData.id = id - 1;
-    own(board, m);
+    own(parts, m);
     const chips = [
       [[-0.012, 0.0555, 0.0025, 0.070], 0.0015, 0.0008],   // A19 Pro
       [[-0.0295, 0.0575, -0.0175, 0.0685], 0.0012, 0.0006], // C1X
       [[0.0045, 0.064, 0.0105, 0.0715], 0.001, 0.0005],    // N1
-      [[0.0045, 0.0545, 0.0105, 0.061], 0.001, 0.0005],    // power
-      [[-0.0105, 0.051, -0.001, 0.0538], 0.0006, 0.0004],  // battery connector
-      [[-0.031, 0.0512, -0.0205, 0.054], 0.0006, 0.0004],  // display connector
     ];
-    for (const [rect, r, h] of chips) { const c = block(pass, next(), rect, r, 0.0005, 0.0005 - h); c.userData.id = id - 1; own(board, c); }
-    take(board, 'Front Camera module');
+    for (const [rect, r, h] of chips) { const c = block(pass, next(), rect, r, 0.0005, 0.0005 - h); c.userData.id = id - 1; own(parts, c); }
+    take(parts, 'Front Camera module');
+    for (const rect of [[-0.031, -0.0755, -0.0115, -0.0665], [0.0115, -0.0755, 0.031, -0.0665]]) {
+      const c = block(pass, next(), rect, 0.0016, -0.0013, 0.0013); c.userData.id = id - 1; own(parts, c);
+    }
   }
 
-  /* battery: the metal-cased cell with its flex tab, the Taptic Engine and the speaker */
-  const bat = layer('battery', 0.008);
-  for (const [rect, r, z0, z1] of [
-    [[-0.0335, -0.0635, 0.0335, 0.0465], 0.0045, -0.0016, 0.0016],
-    [[-0.0095, 0.040, -0.0015, 0.0525], 0.001, -0.0019, -0.0016],
-    [[-0.031, -0.0755, -0.0115, -0.0665], 0.0016, -0.0013, 0.0013],
-    [[0.0115, -0.0755, 0.031, -0.0665], 0.0016, -0.0013, 0.0013],
-  ]) { const m = block(pass, next(), rect, r, z0, z1); m.userData.id = id - 1; own(bat, m); }
-
-  /* frame: the titanium band, its buttons, the port and the speaker holes */
-  const frame = layer('frame', 0.008);
-  for (const n of ['Body', 'Button Action', 'Button Volume Up', 'Button Volume Down', 'Button Power On/Off', 'Camera Control', 'USB C port', 'Speaker mesh', 'Screw']) take(frame, n);
-
   /* display: the glass */
-  const disp = layer('display', 0.008);
+  const disp = layer('display', 0.013);
   take(disp, 'Screen');
 
   /* the interface, one layer per depth of nesting */
-  const uiLayers = UI_LEVELS.map((name, i) => layer(`ui · ${name}`, i === 0 ? 0.007 : 0.006));
+  const uiLayers = UI_LEVELS.map((name, i) => layer(`ui · ${name}`, i === 0 ? 0.011 : 0.009));
   let primary = -1;
   const toLocal = (x, y) => new THREE.Vector2(fx((x - 210) * PT), (456 - y) * PT);
   // ids by level, so each layer of the interface is one run of ids
