@@ -178,9 +178,44 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(window.DAVID_MODEL_URL |
   document.getElementById('loading').remove();
 }, undefined, err => { document.getElementById('loading').textContent = 'model failed to load'; console.error(err); });
 
+/* ---- ink: the resting frame's body lines, joined and smoothed as vector strokes -- */
+const ink = document.getElementById('ink');
+const ictx = ink.getContext('2d');
+let strokes = null;
+function sizeInk() {
+  const d = Math.min(window.devicePixelRatio, 3);
+  ink.width = Math.round(window.innerWidth * d); ink.height = Math.round(window.innerHeight * d);
+  ictx.setTransform(d, 0, 0, d, 0, 0);
+  strokes = null;
+}
+function drawInk(alpha) {
+  ictx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+  if (!strokes || alpha <= 0) return;
+  const c = pass.colors();
+  ictx.globalAlpha = alpha;
+  ictx.lineCap = 'round'; ictx.lineJoin = 'round';
+  ictx.lineWidth = +stroke.value;
+  for (const [list, color] of [[strokes.crease, c.lo], [strokes.muscle, c.mid]]) {
+    ictx.strokeStyle = color;
+    ictx.beginPath();
+    for (const p of list) {
+      ictx.moveTo(p[0][0], p[0][1]);
+      for (let i = 1; i < p.length - 1; i++) {
+        ictx.quadraticCurveTo(p[i][0], p[i][1], (p[i][0] + p[i + 1][0]) / 2, (p[i][1] + p[i + 1][1]) / 2);
+      }
+      const l = p[p.length - 1];
+      ictx.lineTo(l[0], l[1]);
+    }
+    ictx.stroke();
+  }
+  ictx.globalAlpha = 1;
+}
+window.addEventListener('resize', sizeInk);
+sizeInk();
+
 /* ---- loop ------------------------------------------------------------------- */
 const fmt = (n, w) => String(Math.round(n)).padStart(w, '0');
-let prev = performance.now(), lastText = '', lastKey = '';
+let prev = performance.now(), lastText = '', lastKey = '', pruneT = 0;
 renderer.setAnimationLoop(now => {
   const dt = Math.min(0.05, (now - prev) / 1000) * (slow ? 0.25 : 1);
   prev = now;
@@ -191,7 +226,16 @@ renderer.setAnimationLoop(now => {
   const text = `θ ${fmt(s.degrees, 3)}° · ω ${s.omega.toFixed(2).padStart(5, ' ')} rad/s · face <b>${s.face}</b>/4 · ${s.mode}`;
   if (text !== lastText) { readout.innerHTML = text; lastText = text; }
 
-  // draw only when something changed: the angle, the hover, the look, the size
-  const key = `${spin.rotation.y.toFixed(5)}|${hot}|${lookVersion}`;
-  if (key !== lastKey) { pass.render(scene, camera, hot); lastKey = key; }
+  // at rest, short interior lines fade out over a quarter second; any motion shows them again
+  const resting = s.mode === 'rest' && !dragging;
+  pruneT = resting ? Math.min(1, pruneT + dt / 0.25) : 0;
+  // draw only when something changed: the angle, the hover, the look, the size, the fade
+  const sig = `${spin.rotation.y.toFixed(5)}|${lookVersion}`;
+  const key = `${sig}|${hot}|${pruneT.toFixed(2)}`;
+  if (key !== lastKey) {
+    const traced = pass.render(scene, camera, hot, { prune: pruneT, sig });
+    if (traced) strokes = traced;
+    drawInk(pruneT);
+    lastKey = key;
+  }
 });

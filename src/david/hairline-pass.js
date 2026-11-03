@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { traceStrokes } from './vectorize.js';
 
 /* Hairline look for real meshes, in three passes.
 
@@ -30,7 +31,7 @@ const idVert = /* glsl */`
   #ifdef HAS_FORM
   attribute vec3 _formnormal;
   #endif
-  varying vec3 vN; varying float vD; varying float vF; varying float vK;
+  varying vec3 vN; varying float vD; varying float vF; varying float vB;
   void main() {
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vN = normalize(normalMatrix * normal);
@@ -38,23 +39,22 @@ const idVert = /* glsl */`
     #ifdef HAS_FORM
     vec3 fn = normalize(normalMatrix * normalize(_formnormal));
     vF = max(0.0, dot(fn, normalize(vec3(-0.15, 0.3, 1.0))));   // n·l, the light just above the eye
-    vK = 0.5 + 0.5 * dot(fn, normalize(vec3(-0.45, 0.6, 0.66))); // the key light, high and left
     // the body only: hair and face keep their own lines, the rock base is not anatomy
     float body = smoothstep(0.07, 0.1, position.y) * (1.0 - smoothstep(0.84, 0.865, position.y));
     vF = mix(1.0, vF, body);
-    vK = mix(1.0, vK, smoothstep(0.07, 0.1, position.y));
+    vB = body;
     #else
-    vF = 1.0; vK = 1.0;
+    vF = 1.0; vB = 0.0;
     #endif
     gl_Position = projectionMatrix * mv;
   }`;
 const idFrag = /* glsl */`
-  uniform float uId; varying vec3 vN; varying float vD; varying float vF; varying float vK;
+  uniform float uId; varying vec3 vN; varying float vD; varying float vF; varying float vB;
   void main() {
     vec3 n = normalize(vN);
     if (!gl_FrontFacing) n = -n;
-    #ifdef TONE_PASS
-    gl_FragColor = vec4(vK, 0.0, 0.0, 1.0);          // the key-light shading, for the tone
+    #ifdef BODY_PASS
+    gl_FragColor = vec4(vB, 0.0, 0.0, 1.0);          // where the body is, for pruning short lines
     #else
     gl_FragColor = vec4(n.xy, uId + clamp(vF, 0.0, 1.0) * 0.9, vD);
     #endif
@@ -97,7 +97,7 @@ const valleyFrag = /* glsl */`
 
 const lineFrag = /* glsl */`
   ${common}
-  uniform sampler2D tV, tT; uniform float uR, uTone;
+  uniform sampler2D tV, tB; uniform float uR, uPrune, uMask;
   uniform float uCrease, uDepth, uHot, uForm, uFormOn, uDebug;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
   vec3 nrm(vec4 s) { return vec3(s.xy, sqrt(max(0.0, 1.0 - dot(s.xy, s.xy)))); }
@@ -146,14 +146,16 @@ const lineFrag = /* glsl */`
         if (v >= V(vUv + o) && v >= V(vUv - o)) frm = smoothstep(uForm, uForm * 1.5, v);
       }
     }
-    vec3 col = cPlate;
-    // cel-style tone: a soft two-step ramp of the key light on the smooth form normal,
-    // in the plate's own family, so the muscles read full without any fill colour
-    if (!cb && uTone > 0.0) {
-      float k = texture2D(tT, vUv).r;
-      float t = 0.5 * (1.0 - smoothstep(0.56, 0.66, k)) + 0.5 * (1.0 - smoothstep(0.36, 0.46, k));
-      col = mix(col, mix(cLo, cMid, 0.25), t * uTone);
+    // at rest the body's interior lines (muscle lines, creases) are read back, joined and
+    // redrawn as smooth vector strokes; here they fade out under them. The outline,
+    // contours, hair and face always stay on the GPU.
+    float body = step(0.5, texture2D(tB, vUv).r);
+    if (uMask > 0.5) {
+      gl_FragColor = vec4(step(0.5, frm) * body, step(0.5, cre) * body, 0.0, 1.0);
+      return;
     }
+    frm *= 1.0 - uPrune * body; cre *= 1.0 - uPrune * body;
+    vec3 col = cPlate;
     col = mix(col, cLo, cre);
     col = mix(col, cMid, frm);
     col = mix(col, cMid, occ);
@@ -168,15 +170,18 @@ const quadVert = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(po
 export function createHairlinePass(renderer) {
   const opts = { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
   const rt = new THREE.WebGLRenderTarget(2, 2, { ...opts, depthBuffer: true });
+  const rtB = new THREE.WebGLRenderTarget(2, 2, { ...opts, depthBuffer: true });   // body mask
+  const rtM = new THREE.WebGLRenderTarget(2, 2, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false }); // prunable lines, read back
+  let maskBuf = null, pruneSig = '', strokes = { muscle: [], crease: [] };
   // the valley map is read between pixels (gradient, crest test), so it filters linearly
-  const rtT = new THREE.WebGLRenderTarget(2, 2, { ...opts, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true });
   const rtV = new THREE.WebGLRenderTarget(2, 2, { ...opts, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
   const theme = { ...THEMES.light };
   const col = k => new THREE.Color(theme[k]);
   const shared = { tN: { value: rt.texture }, uTexel: { value: new THREE.Vector2() } };
   const valleyUniforms = { ...shared, uFormR: { value: 10 } };
   const uniforms = {
-    ...shared, tV: { value: rtV.texture }, tT: { value: rtT.texture }, uTone: { value: 0.6 }, uR: { value: 1.5 },
+    ...shared, tV: { value: rtV.texture }, tB: { value: rtB.texture },
+    uPrune: { value: 0 }, uMask: { value: 0 }, uR: { value: 1.5 },
     uCrease: { value: 0.12 }, uDepth: { value: 0.012 }, uHot: { value: -1 },
     uForm: { value: 0.02 }, uFormOn: { value: 1 },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
@@ -197,49 +202,69 @@ export function createHairlinePass(renderer) {
   const clear = new THREE.Color(0, 0, 0);
   const strokeR = () => Math.max(0.75, strokePx * ratio * 0.5);
 
+  // Read back the body's interior lines and turn them into joined, smoothed strokes.
+  // Runs once per resting pose (see render's sig).
+  function traceInterior(scene, camera) {
+    const swapped = [];
+    scene.traverse(o => { if (o.isMesh && o.material.userData.body) { swapped.push([o, o.material]); o.material = o.material.userData.body; } });
+    renderer.setRenderTarget(rtB); renderer.clear(); renderer.render(scene, camera);
+    for (const [o, m] of swapped) o.material = m;
+    uniforms.uMask.value = 1;
+    renderer.setRenderTarget(rtM); renderer.render(lineScene, quadCam);
+    uniforms.uMask.value = 0;
+    const w = rtM.width, h = rtM.height;
+    renderer.readRenderTargetPixels(rtM, 0, 0, w, h, maskBuf);
+    strokes = {
+      muscle: traceStrokes(maskBuf, 0, w, h, ratio, { minLen: 16, gap: 14 }),
+      crease: traceStrokes(maskBuf, 1, w, h, ratio, { minLen: 12, gap: 8 }),
+    };
+  }
+
   return {
     // form: true for a mesh that carries the baked _formnormal attribute
     material(id, { form = false } = {}) {
-      const make = tone => new THREE.ShaderMaterial({
+      const make = body => new THREE.ShaderMaterial({
         uniforms: { uId: { value: id } }, vertexShader: idVert, fragmentShader: idFrag, side: THREE.DoubleSide,
-        defines: { ...(form ? { HAS_FORM: '' } : {}), ...(tone ? { TONE_PASS: '' } : {}) },
+        defines: { ...(form ? { HAS_FORM: '' } : {}), ...(body ? { BODY_PASS: '' } : {}) },
       });
       const m = make(false);
-      m.userData.tone = make(true);                  // swapped in for the tone pass
+      m.userData.body = make(true);                  // swapped in for the body-mask pass
       return m;
     },
     setSize(w, h, pixelRatio) {
-      rt.setSize(w, h); rtV.setSize(w, h); rtT.setSize(w, h); ratio = pixelRatio;
+      rt.setSize(w, h); rtV.setSize(w, h); rtB.setSize(w, h); rtM.setSize(w, h); ratio = pixelRatio;
+      maskBuf = new Uint8Array(w * h * 4); pruneSig = '';
       shared.uTexel.value.set(1 / w, 1 / h);
       uniforms.uR.value = strokeR();
       valleyUniforms.uFormR.value = 5 * ratio;      // ~5 CSS px: a muscle valley on screen
     },
     // detail 0: only the deepest creases; 1: every curl of the hair
-    // muscle 0: pure line; 1: full cel tone on the forms
+    // muscle 0: no muscle lines; 1: every clear valley
     setLook({ detail, stroke, muscle }) {
       strokePx = stroke;
       uniforms.uR.value = strokeR();
       uniforms.uCrease.value = THREE.MathUtils.lerp(0.32, 0.035, detail);
-      uniforms.uForm.value = 0.055;                  // only the clear separations
+      uniforms.uForm.value = THREE.MathUtils.lerp(0.09, 0.03, muscle);
       uniforms.uFormOn.value = muscle > 0.001 ? 1 : 0;
-      uniforms.uTone.value = muscle;
     },
+    colors() { return { ...theme }; },
     setTheme(name) {
       Object.assign(theme, THEMES[name]);
       for (const k of ['plate', 'hi', 'edge', 'mid', 'lo']) uniforms['c' + k[0].toUpperCase() + k.slice(1)].value.set(theme[k]);
     },
-    render(scene, camera, hotId) {
+    // prune: 0 draws every line on the GPU (moving); 1 hands the body's interior lines to
+    // the vector strokes (at rest). sig names the frame (angle + look) so the read-back runs
+    // once per resting pose. Returns the strokes when they were just traced, else null.
+    render(scene, camera, hotId, { prune = 0, sig = '' } = {}) {
       uniforms.uHot.value = hotId || -1;
       renderer.setClearColor(clear, 0);
       renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, camera);
-      if (uniforms.uTone.value > 0) {
-        const swapped = [];
-        scene.traverse(o => { if (o.isMesh && o.material.userData.tone) { swapped.push([o, o.material]); o.material = o.material.userData.tone; } });
-        renderer.setRenderTarget(rtT); renderer.clear(); renderer.render(scene, camera);
-        for (const [o, m] of swapped) o.material = m;
-      }
       renderer.setRenderTarget(rtV); renderer.render(valleyScene, quadCam);
+      let traced = null;
+      if (prune > 0 && sig !== pruneSig) { traceInterior(scene, camera); pruneSig = sig; traced = strokes; }
+      uniforms.uPrune.value = prune;
       renderer.setRenderTarget(null); renderer.render(lineScene, quadCam);
+      return traced;
     },
   };
 }

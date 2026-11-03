@@ -30,6 +30,7 @@
       .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
       canvas { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; touch-action: none; cursor: grab; }
       canvas.dragging { cursor: grabbing; }
+      #ink { pointer-events: none; cursor: auto; }
       header { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: baseline; padding-block: calc(22px + env(safe-area-inset-top, 0px)) 0; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); pointer-events: none; }
       header h1 { margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; }
       header span { font-size: 10px; color: var(--muted); }
@@ -56,6 +57,7 @@
   </head>
   <body>
     <canvas id="stage" aria-label="Michelangelo's David on a turntable, drawn in thin lines. Drag sideways to spin it; arrow keys turn it a quarter." tabindex="0"></canvas>
+    <canvas id="ink" aria-hidden="true"></canvas>
     <header>
       <h1>David — line study</h1>
       <span class="mono">Fine Art · 04</span>
