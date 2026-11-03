@@ -12,6 +12,7 @@ export default defineConfig({
         cabinet: resolve(import.meta.dirname, 'cabinet.html'),
         spacing: resolve(import.meta.dirname, 'spacing.html'),
         springs: resolve(import.meta.dirname, 'springs.html'),
+        flipbook: resolve(import.meta.dirname, 'flipbook.html'),
       },
     },
   },
