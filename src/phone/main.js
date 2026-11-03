@@ -49,6 +49,7 @@ const root = mk('g', '', svg);
 const stage = buildPlatter().map(p => ({ ...p, g: mk('g', '', root) }));
 const parts = buildParts();
 const groups = LAYERS.map((L, i) => ({ L, i, g: mk('g', '', root), guide: null, parts: [] }));
+groups.forEach(G => G.g.setAttribute('data-layer', G.i));
 for (const p of parts) {
   const G = groups[p.layer];
   p.g = mk('g', '', G.g);
@@ -65,7 +66,6 @@ for (const s of stage) { s.sil = mk('path', 'sil', s.g); s.cr = mk('path', 'cr',
 const corner = R - R * Math.SQRT1_2 + 1.2;
 const CORNERS = [[-W / 2 + corner, corner], [W / 2 - corner, corner], [-W / 2 + corner, H - corner], [W / 2 - corner, H - corner]];
 for (const G of groups) G.guide = mk('path', 'guide', root);
-const primary = parts.find(p => p.primary);
 
 /* ---- the model -------------------------------------------------------------- */
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -101,8 +101,16 @@ function stepSprings(dt) {
     }
   }
 }
-// where a layer stands along y: its share of the even gap and of the focus gap
+// where a layer stands along y: its share of the even gap and of the focus gap. Layers
+// never pass through each other: a layer that would fall behind the one under it is
+// pushed along by it. The layers set off at staggered times, and without this one can
+// slip behind the glass for a moment on its way and blink out.
 const offsetOf = (i, o, f) => (LAYERS[i].p * o + FOCUS * f) * gapK;
+function offsets(o, f) {
+  const off = LAYERS.map((_, i) => offsetOf(i, o[i], f[i]));
+  for (let i = 1; i < off.length; i++) off[i] = Math.max(off[i], off[i - 1]);
+  return off;
+}
 const layerY = (i, off) => off + (LAYERS[i].ui ? SCREEN_FRONT + 0.02 * (i - 2) : 0);
 const shift = (fr, dy) => ({ ...fr, o: [fr.o[0], fr.o[1] + dy, fr.o[2]] });
 
@@ -117,7 +125,7 @@ function draw(o, f, hot) {
     s.sil.setAttribute('d', d.sil); s.cr.setAttribute('d', d.crease);
     s.depth = key(s.frame.o[0], s.frame.o[1]);
   }
-  const ys = groups.map(G => layerY(G.i, offsetOf(G.i, o[G.i], f[G.i])));
+  const off = offsets(o, f), ys = groups.map(G => layerY(G.i, off[G.i]));
   const apart = o.reduce((a, v) => a + v, 0) / N;
   for (const G of groups) {
     // the components hide inside the closed phone: drawn once it opens
@@ -135,7 +143,7 @@ function draw(o, f, hot) {
       // reach along x and paint the slab over the buttons)
       const c = at(p.frame, p.cu, p.cv, (p.w0 + p.w1) / 2), w = p.frame.W;
       p.depth = (T[0] * w[0] + T[1] * w[1]) * (c[0] * w[0] + c[1] * w[1]);
-      p.sil.classList.toggle('hi', hot === G.i || (hot === 'primary' && p === primary));
+      p.sil.classList.toggle('hi', hot === G.i);
     }
     G.parts.sort((a, b) => a.depth - b.depth).forEach(p => G.g.appendChild(p.g));
   }
@@ -172,7 +180,7 @@ function overPhone(pt) {
 function layerAt(pt, o, f) {
   setAz();
   const P = proj(C), T = toward(C);
-  const ys = groups.map(G => layerY(G.i, offsetOf(G.i, o[G.i], f[G.i])));
+  const off = offsets(o, f), ys = groups.map(G => layerY(G.i, off[G.i]));
   const yy = i => ys[i] + (LAYERS[i].ui ? 0 : LAYERS[i].y);
   const order = groups.map(G => G.i).sort((a, b) => T[1] * yy(b) - T[1] * yy(a));   // near first
   for (const i of order) {
@@ -320,14 +328,14 @@ function frame(now) {
   let part = 'rest';
   if (act >= 0) {
     // a layer's number is its own: how far it stands from where it sits, + toward the screen
-    const z = offsetOf(act, o[act], f[act]);
+    const z = offsets(o, f)[act];
     part = `${String(act + 1).padStart(2, '0')}/${N} ${LAYERS[act].name} · z ${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(1)} mm`;
   } else if (open) part = 'apart';
   const text = `θ ${fmt(s.degrees, 3)}° · face <b>${s.face}</b>/4 · ${part}`;
   if (text !== lastText) { readout.innerHTML = text; lastText = text; }
 
-  // one bright edge: the chosen layer, else the interface's primary button
-  const hot = act >= 0 ? act : 'primary';
+  // one bright edge: the chosen layer, and nothing at rest
+  const hot = act;
   const key = `${table.theta.toFixed(5)}|${o.map(v => v.toFixed(4))}|${f.map(v => v.toFixed(4))}|${hot}|${look}`;
   if (key !== lastKey) { draw(o, f, hot); lastKey = key; }
   requestAnimationFrame(frame);
