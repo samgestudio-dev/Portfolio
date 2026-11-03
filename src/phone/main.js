@@ -53,7 +53,8 @@ groups.forEach(G => G.g.setAttribute('data-layer', G.i));
 for (const p of parts) {
   const G = groups[p.layer];
   p.g = mk('g', '', G.g);
-  if (p.plane) p.sil = mk('path', p.mark ? (p.name === 'mic' ? 'dot' : 'mk') : p.fill ? 'fill' : 'sil', p.g);
+  // the interface's outlines one step lighter than a solid's (mid, not edge) until chosen
+  if (p.plane) p.sil = mk('path', p.mark ? (p.name === 'mic' ? 'dot' : 'mk') : p.fill ? 'fill' : 'sil ui', p.g);
   else { p.sil = mk('path', 'sil', p.g); p.cr = mk('path', 'cr', p.g); }
   // the centre of its ring, for the paint order
   const us = p.ring.map(q => q.u), vs = p.ring.map(q => q.v);

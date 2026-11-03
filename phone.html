@@ -36,11 +36,12 @@
       /* the drawing, as Hairline paints it: plates filled with the ground, one stroke width */
       #stage path { fill: var(--paper); stroke: var(--hl-mid); stroke-width: var(--hl-sw); vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; transition: stroke 260ms cubic-bezier(.5, 0, .1, 1); }
       #stage .sil { stroke: var(--hl-edge); }
+      #stage .sil.ui { stroke: var(--hl-mid); }
       #stage .cr { fill: none; stroke: var(--hl-lo); }
       #stage .fill { fill: var(--hl-lo); stroke: none; }
       #stage .mk { fill: none; stroke: var(--hl-mid); }
       #stage .dot { fill: var(--hl-mid); stroke: none; }
-      #stage .hi { stroke: var(--hl-hi); }
+      #stage .hi, #stage .sil.ui.hi { stroke: var(--hl-hi); }
       #stage .fill.hi { stroke: var(--hl-hi); }
       #stage .guide { fill: none; stroke: var(--hl-mid); stroke-dasharray: 0.7 2.1; }
       header { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: baseline; padding-block: calc(22px + env(safe-area-inset-top, 0px)) 0; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); pointer-events: none; }
