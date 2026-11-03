@@ -1,6 +1,6 @@
 import { createTurntable } from '../lib/turntable.js';
 import { Cam, proj, toward, prism3, flat, hull, inside, seg, circ, at, clamp, lerp } from '../lib/iso.js';
-import { buildParts, buildPlatter, LAYERS, H, W, R, SCREEN_FRONT, PLATTER_R } from './scene.js';
+import { buildParts, buildPlatter, LAYERS, OUTLINE, H, W, R, SCREEN_FRONT, PLATTER_R } from './scene.js';
 
 /* Product · 02 — an iPhone Air on the turntable, taken apart along one axis, drawn the
    way Hairline draws: rounded solids as a silhouette and one crease, plates filled with
@@ -177,7 +177,8 @@ function overPhone(pt) {
   const P = proj(C), ring = circ(0, 0, open ? PLATTER_R : W / 2 + 6, 32);
   return inside(pt, hull(ring.map(q => P(q.u, q.v, 0)).concat(ring.map(q => P(q.u, q.v, H + 4)))));
 }
-// the frontmost layer under pt with the layers posed as (o, f)
+// the frontmost layer under pt with the layers posed as (o, f). Each layer's hit area is
+// the layer itself, the phone's whole outline across its span, never just what it holds
 function layerAt(pt, o, f) {
   setAz();
   const P = proj(C), T = toward(C);
@@ -185,13 +186,9 @@ function layerAt(pt, o, f) {
   const yy = i => ys[i] + (LAYERS[i].ui ? 0 : LAYERS[i].y);
   const order = groups.map(G => G.i).sort((a, b) => T[1] * yy(b) - T[1] * yy(a));   // near first
   for (const i of order) {
-    for (const p of groups[i].parts) {
-      if (p.mark) continue;
-      const fr = shift(p.frame, ys[i]);
-      const ring0 = p.ring.map(q => P(...at(fr, q.u, q.v, p.w0)));
-      const shape = p.plane ? ring0 : hull(ring0.concat(p.ring.map(q => P(...at(fr, q.u, q.v, p.w1)))));
-      if (inside(pt, shape)) return i;
-    }
+    const [a, b] = LAYERS[i].span;
+    const shape = hull([a, b].flatMap(w => OUTLINE.map(q => P(q.u, ys[i] + w, q.v))));
+    if (inside(pt, shape)) return i;
   }
   return -1;
 }

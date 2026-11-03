@@ -20,13 +20,16 @@ const RIGHT = { U: [0, -1, 0], V: [0, 0, 1], W: [1, 0, 0] };        // the right
 const f = (F, o = [0, 0, 0]) => ({ o, ...F });
 
 // y: where the layer sits through the body when assembled, which orders the painting
+// span: how far the layer reaches through y (for an interface layer, from its own plane):
+// its hit area is the phone's whole outline across that span
 export const LAYERS = [
-  { name: 'body', gap: 0, y: -1.2 },
-  { name: 'components', gap: 13, y: -0.1 },
-  { name: 'display', gap: 13, y: 2.41 },
-  { name: 'ui · layout', gap: 11, ui: true, y: 2.84 },
-  { name: 'ui · content', gap: 9, ui: true, y: 2.86 },
+  { name: 'body', gap: 0, y: -1.2, span: [Y_BACK - 3.7, Y_GLASS] },
+  { name: 'components', gap: 13, y: -0.1, span: [-1.6, 1.4] },
+  { name: 'display', gap: 13, y: 2.41, span: [Y_GLASS, Y_FRONT] },
+  { name: 'ui · layout', gap: 11, ui: true, y: 2.84, span: [0, 0] },
+  { name: 'ui · content', gap: 9, ui: true, y: 2.86, span: [0, 0] },
 ];
+export const OUTLINE = rrect(-W / 2, 0, W / 2, H, R, 8);
 { let p = 0; for (const L of LAYERS) { p += L.gap; L.p = p; } const mid = p / 2; for (const L of LAYERS) L.p -= mid; }
 
 export function buildParts() {
