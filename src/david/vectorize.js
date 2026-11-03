@@ -10,24 +10,54 @@
    4. drop    whatever is still shorter than minLen
    5. smooth  resample and relax each polyline, so it draws as one clean curve
 
-   Coordinates come back in CSS pixels, origin top-left, ready for a 2D canvas.          */
+   Coordinates come back in CSS pixels, origin top-left, ready for a 2D canvas.
+   It runs every frame the picture changes, so buffers are reused and every scan after
+   the first stays inside the box the lines occupy.                                       */
 
 const N8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
 
-export function traceStrokes(mask, channel, w, h, ratio, { minLen = 16, gap = 12, maxTurn = 50 } = {}) {
-  // 1. down to roughly one cell per CSS pixel, OR-pooled
-  const f = Math.max(1, Math.round(ratio));
-  const gw = Math.ceil(w / f), gh = Math.ceil(h / f);
-  const g = new Uint8Array(gw * gh);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
-    if (mask[(y * w + x) * 4 + channel] > 127) g[((y / f) | 0) * gw + ((x / f) | 0)] = 1;
+// Buffers live across frames: the line pass runs every frame the turntable moves.
+let cache = { n: 0 };
+function buffers(n) {
+  if (cache.n !== n) cache = { n, g: [new Uint8Array(n), new Uint8Array(n)], seen: new Uint8Array(n) };
+  return cache;
+}
 
-  thin(g, gw, gh);
+/* mask: RGBA bytes, one pixel per CSS pixel, bottom row first (a WebGL read-back).
+   specs: one entry per channel to trace, e.g. [{ channel: 0, minLen: 16, gap: 14 }].
+   One scan of the mask fills a grid per channel; everything after stays in the box the
+   lines occupy.                                                                         */
+export function traceAll(mask, w, h, specs) {
+  const n = w * h, { g, seen } = buffers(n);
+  const box = specs.map(() => [w, -1, h, -1]);
+  g[0].fill(0); g[1].fill(0);
+  const m32 = new Uint32Array(mask.buffer, mask.byteOffset, n);   // little-endian: r = low byte
+  for (let i = 0; i < n; i++) {
+    const v = m32[i];
+    if ((v & 0xffff) === 0) continue;
+    const x = i % w, y = (i / w) | 0;
+    for (let k = 0; k < specs.length; k++) {
+      if (((v >> (8 * specs[k].channel)) & 0xff) < 128) continue;
+      g[k][i] = 1;
+      const b = box[k];
+      if (x < b[0]) b[0] = x; if (x > b[1]) b[1] = x; if (y < b[2]) b[2] = y; if (y > b[3]) b[3] = y;
+    }
+  }
+  return specs.map((spec, k) => box[k][1] < 0 ? [] : traceGrid(g[k], seen, w, h, box[k], spec));
+}
+
+function traceGrid(g, seen, gw, gh, [x0, x1, y0, y1], { minLen = 16, gap = 12, maxTurn = 50 } = {}) {
+  const f = 1, ratio = 1, h = gh;
+  thin(g, gw, gh, x0, x1, y0, y1);
+  for (let y = y0; y <= y1; y++) seen.fill(0, y * gw + x0, y * gw + x1 + 1);
 
   // 2. trace
   const at = (x, y) => x >= 0 && y >= 0 && x < gw && y < gh && g[y * gw + x] === 1;
-  const degree = (x, y) => N8.reduce((n, [dx, dy]) => n + (at(x + dx, y + dy) ? 1 : 0), 0);
-  const seen = new Uint8Array(gw * gh);
+  const degree = (x, y) => {
+    let c = 0;
+    for (let k = 0; k < 8; k++) if (at(x + N8[k][0], y + N8[k][1])) c++;
+    return c;
+  };
   const lines = [];
   const walk = (x, y) => {
     const pts = [[x, y]];
@@ -49,9 +79,9 @@ export function traceStrokes(mask, channel, w, h, ratio, { minLen = 16, gap = 12
     }
     return pts;
   };
-  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++)
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++)
     if (g[y * gw + x] && !seen[y * gw + x] && degree(x, y) === 1) lines.push(walk(x, y));
-  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++)          // loops and leftovers
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++)      // loops and leftovers
     if (g[y * gw + x] && !seen[y * gw + x] && degree(x, y) < 3) lines.push(walk(x, y));
 
   // grid → CSS px, flipped (the read-back starts at the bottom row)
@@ -131,9 +161,9 @@ function smooth(p) {
 }
 
 // Zhang–Suen thinning, in place, visiting only pixels that are on
-function thin(g, w, h) {
+function thin(g, w, h, x0 = 0, x1 = w - 1, y0 = 0, y1 = h - 1) {
   let on = [];
-  for (let i = 0; i < g.length; i++) if (g[i]) on.push(i);
+  for (let y = y0; y <= y1; y++) for (let x = x0, i = y * w + x0; x <= x1; x++, i++) if (g[i]) on.push(i);
   const P = (i, dx, dy) => { const x = i % w + dx, y = ((i / w) | 0) + dy; return x >= 0 && y >= 0 && x < w && y < h ? g[y * w + x] : 0; };
   for (let changed = true, iter = 0; changed && iter < 30; iter++) {
     changed = false;

@@ -24,6 +24,7 @@ camera.position.set(Math.sin(az) * Math.cos(el) * dist, target.y + Math.sin(el) 
 camera.lookAt(target);
 
 const pass = createHairlinePass(renderer);
+window.__lineStudy = { pass };   // for tuning from the console
 
 /* ---- objects ---------------------------------------------------------------- */
 // Everything spinning lives in `spin`; the base stays put.
@@ -137,11 +138,15 @@ const muscle = document.getElementById('muscle');
 const detail = document.getElementById('detail');
 const stroke = document.getElementById('stroke');
 const slowBtn = document.getElementById('slow');
+const contBtn = document.getElementById('continuous');
+// the continuous-line rule: dashes joined into one smooth stroke, short bits hidden
+let continuous = true;
 const themeBtn = document.getElementById('theme');
 const applyLook = () => (lookVersion++, pass.setLook({ detail: +detail.value, stroke: +stroke.value, muscle: +muscle.value }));
 muscle.addEventListener('input', applyLook);
 detail.addEventListener('input', applyLook);
 stroke.addEventListener('input', applyLook);
+contBtn.addEventListener('click', () => { continuous = !continuous; contBtn.setAttribute('aria-pressed', continuous); lookVersion++; });
 slowBtn.addEventListener('click', () => { slow = !slow; slowBtn.setAttribute('aria-pressed', slow); });
 // The page follows the system until the button sets a theme explicitly.
 const sysDark = matchMedia('(prefers-color-scheme: dark)');
@@ -178,7 +183,7 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(window.DAVID_MODEL_URL |
   document.getElementById('loading').remove();
 }, undefined, err => { document.getElementById('loading').textContent = 'model failed to load'; console.error(err); });
 
-/* ---- ink: the resting frame's body lines, joined and smoothed as vector strokes -- */
+/* ---- ink: the body's lines, joined and smoothed as vector strokes ---------------- */
 const ink = document.getElementById('ink');
 const ictx = ink.getContext('2d');
 let strokes = null;
@@ -215,7 +220,7 @@ sizeInk();
 
 /* ---- loop ------------------------------------------------------------------- */
 const fmt = (n, w) => String(Math.round(n)).padStart(w, '0');
-let prev = performance.now(), lastText = '', lastKey = '', pruneT = 0;
+let prev = performance.now(), lastText = '', lastKey = '';
 renderer.setAnimationLoop(now => {
   const dt = Math.min(0.05, (now - prev) / 1000) * (slow ? 0.25 : 1);
   prev = now;
@@ -226,16 +231,13 @@ renderer.setAnimationLoop(now => {
   const text = `θ ${fmt(s.degrees, 3)}° · ω ${s.omega.toFixed(2).padStart(5, ' ')} rad/s · face <b>${s.face}</b>/4 · ${s.mode}`;
   if (text !== lastText) { readout.innerHTML = text; lastText = text; }
 
-  // at rest, short interior lines fade out over a quarter second; any motion shows them again
-  const resting = s.mode === 'rest' && !dragging;
-  pruneT = resting ? Math.min(1, pruneT + dt / 0.25) : 0;
-  // draw only when something changed: the angle, the hover, the look, the size, the fade
+  // draw only when something changed: the angle, the hover, the look, the size
   const sig = `${spin.rotation.y.toFixed(5)}|${lookVersion}`;
-  const key = `${sig}|${hot}|${pruneT.toFixed(2)}`;
+  const key = `${sig}|${hot}`;
   if (key !== lastKey) {
-    const traced = pass.render(scene, camera, hot, { prune: pruneT, sig });
+    const traced = pass.render(scene, camera, hot, { prune: continuous ? 1 : 0, sig });
     if (traced) strokes = traced;
-    drawInk(pruneT);
+    drawInk(continuous ? 1 : 0);
     lastKey = key;
   }
 });

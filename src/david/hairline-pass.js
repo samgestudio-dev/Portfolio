@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { traceStrokes } from './vectorize.js';
+import { traceAll } from './vectorize.js';
 
 /* Hairline look for real meshes, in three passes.
 
@@ -146,8 +146,8 @@ const lineFrag = /* glsl */`
         if (v >= V(vUv + o) && v >= V(vUv - o)) frm = smoothstep(uForm, uForm * 1.5, v);
       }
     }
-    // at rest the body's interior lines (muscle lines, creases) are read back, joined and
-    // redrawn as smooth vector strokes; here they fade out under them. The outline,
+    // with the continuous rule on, the body's interior lines (muscle lines, creases) are read
+    // back, joined and redrawn as smooth vector strokes every frame; here they step aside. The outline,
     // contours, hair and face always stay on the GPU.
     float body = step(0.5, texture2D(tB, vUv).r);
     if (uMask > 0.5) {
@@ -171,8 +171,10 @@ export function createHairlinePass(renderer) {
   const opts = { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
   const rt = new THREE.WebGLRenderTarget(2, 2, { ...opts, depthBuffer: true });
   const rtB = new THREE.WebGLRenderTarget(2, 2, { ...opts, depthBuffer: true });   // body mask
-  const rtM = new THREE.WebGLRenderTarget(2, 2, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false }); // prunable lines, read back
-  let maskBuf = null, pruneSig = '', strokes = { muscle: [], crease: [] };
+  const near = { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false };
+  const rtM = new THREE.WebGLRenderTarget(2, 2, near);   // the body's interior lines, full size
+  const rtS = new THREE.WebGLRenderTarget(2, 2, near);   // the same, max-pooled to CSS pixels: what is read back
+  let maskBuf = null, pruneSig = '', strokes = { muscle: [], crease: [] }, jsMs = 0;
   // the valley map is read between pixels (gradient, crest test), so it filters linearly
   const rtV = new THREE.WebGLRenderTarget(2, 2, { ...opts, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
   const theme = { ...THEMES.light };
@@ -197,13 +199,24 @@ export function createHairlinePass(renderer) {
   };
   const valleyScene = quad(valleyFrag, valleyUniforms);
   const lineScene = quad(lineFrag, uniforms);
+  // max-pool the full-size mask into CSS pixels, so a one-stroke line survives the shrink
+  const poolUniforms = { tM: { value: rtM.texture }, uBlock: { value: 1 }, uSrcTexel: { value: new THREE.Vector2() } };
+  const poolScene = quad(/* glsl */`
+    uniform sampler2D tM; uniform float uBlock; uniform vec2 uSrcTexel;
+    varying vec2 vUv;
+    void main() {
+      vec4 m = vec4(0.0);
+      for (int j = 0; j < 3; j++) for (int i = 0; i < 3; i++)
+        m = max(m, texture2D(tM, vUv + (vec2(float(i), float(j)) - 1.0) * uBlock / 3.0 * uSrcTexel));
+      gl_FragColor = m;
+    }`, poolUniforms);
   const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   let ratio = 1, strokePx = 1;
   const clear = new THREE.Color(0, 0, 0);
   const strokeR = () => Math.max(0.75, strokePx * ratio * 0.5);
 
   // Read back the body's interior lines and turn them into joined, smoothed strokes.
-  // Runs once per resting pose (see render's sig).
+  // Runs on every frame that changes the picture (see render's sig).
   function traceInterior(scene, camera) {
     const swapped = [];
     scene.traverse(o => { if (o.isMesh && o.material.userData.body) { swapped.push([o, o.material]); o.material = o.material.userData.body; } });
@@ -212,12 +225,16 @@ export function createHairlinePass(renderer) {
     uniforms.uMask.value = 1;
     renderer.setRenderTarget(rtM); renderer.render(lineScene, quadCam);
     uniforms.uMask.value = 0;
-    const w = rtM.width, h = rtM.height;
-    renderer.readRenderTargetPixels(rtM, 0, 0, w, h, maskBuf);
-    strokes = {
-      muscle: traceStrokes(maskBuf, 0, w, h, ratio, { minLen: 16, gap: 14 }),
-      crease: traceStrokes(maskBuf, 1, w, h, ratio, { minLen: 12, gap: 8 }),
-    };
+    renderer.setRenderTarget(rtS); renderer.render(poolScene, quadCam);
+    const w = rtS.width, h = rtS.height;
+    renderer.readRenderTargetPixels(rtS, 0, 0, w, h, maskBuf);
+    const t1 = performance.now();
+    const [muscle, crease] = traceAll(maskBuf, w, h, [
+      { channel: 0, minLen: 16, gap: 14 },
+      { channel: 1, minLen: 12, gap: 8 },
+    ]);
+    strokes = { muscle, crease };
+    jsMs = performance.now() - t1;
   }
 
   return {
@@ -233,7 +250,11 @@ export function createHairlinePass(renderer) {
     },
     setSize(w, h, pixelRatio) {
       rt.setSize(w, h); rtV.setSize(w, h); rtB.setSize(w, h); rtM.setSize(w, h); ratio = pixelRatio;
-      maskBuf = new Uint8Array(w * h * 4); pruneSig = '';
+      const sw = Math.max(1, Math.round(w / ratio)), sh = Math.max(1, Math.round(h / ratio));
+      rtS.setSize(sw, sh);
+      poolUniforms.uBlock.value = ratio;
+      poolUniforms.uSrcTexel.value.set(1 / w, 1 / h);
+      maskBuf = new Uint8Array(sw * sh * 4); pruneSig = '';
       shared.uTexel.value.set(1 / w, 1 / h);
       uniforms.uR.value = strokeR();
       valleyUniforms.uFormR.value = 5 * ratio;      // ~5 CSS px: a muscle valley on screen
@@ -252,16 +273,21 @@ export function createHairlinePass(renderer) {
       Object.assign(theme, THEMES[name]);
       for (const k of ['plate', 'hi', 'edge', 'mid', 'lo']) uniforms['c' + k[0].toUpperCase() + k.slice(1)].value.set(theme[k]);
     },
-    // prune: 0 draws every line on the GPU (moving); 1 hands the body's interior lines to
-    // the vector strokes (at rest). sig names the frame (angle + look) so the read-back runs
-    // once per resting pose. Returns the strokes when they were just traced, else null.
+    // prune: 0 draws every line on the GPU; 1 hands the body's interior lines to the
+    // continuous vector strokes. sig names the frame (angle + look) so a redraw that only
+    // changes the hover does not trace again. Returns fresh strokes, else null.
     render(scene, camera, hotId, { prune = 0, sig = '' } = {}) {
       uniforms.uHot.value = hotId || -1;
       renderer.setClearColor(clear, 0);
       renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, camera);
       renderer.setRenderTarget(rtV); renderer.render(valleyScene, quadCam);
       let traced = null;
-      if (prune > 0 && sig !== pruneSig) { traceInterior(scene, camera); pruneSig = sig; traced = strokes; }
+      if (prune > 0 && sig !== pruneSig) {
+        const t0 = performance.now();
+        traceInterior(scene, camera); pruneSig = sig; traced = strokes;
+        this.traceMs = performance.now() - t0;     // read-back + tracing, for tuning
+        this.jsMs = jsMs;                           // the tracing alone
+      }
       uniforms.uPrune.value = prune;
       renderer.setRenderTarget(null); renderer.render(lineScene, quadCam);
       return traced;
