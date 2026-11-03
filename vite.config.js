@@ -10,7 +10,7 @@ export default defineConfig({
         david: resolve(import.meta.dirname, 'david.html'),
         phone: resolve(import.meta.dirname, 'phone.html'),
         cabinet: resolve(import.meta.dirname, 'cabinet.html'),
-        zoetrope: resolve(import.meta.dirname, 'zoetrope.html'),
+        spacing: resolve(import.meta.dirname, 'spacing.html'),
       },
     },
   },
