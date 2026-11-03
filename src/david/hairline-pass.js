@@ -113,19 +113,25 @@ const lineFrag = /* glsl */`
     float sil = 0.0, occ = 0.0, cre = 0.0, hot = 0.0, frm = 0.0;
     float id = oid(c);
     vec3 nc = nrm(c);
-    for (int i = 0; i < 8; i++) {
-      float a = float(i) * 0.785398;
-      vec4 n = texture2D(tN, vUv + vec2(cos(a), sin(a)) * uR * uTexel);
+    // Outline and contours, antialiased analytically and of one width at any angle.
+    // Sixteen taps on a ring of radius R: the share f of taps across a boundary gives
+    // the distance to it, d = R·cos(π·f) (exact for a straight edge). The line is drawn
+    // centred on the boundary with half-width uR, and its edge is a one-pixel ramp.
+    float R = uR + 1.5, nSil = 0.0, nOcc = 0.0;
+    for (int i = 0; i < 16; i++) {
+      float a = float(i) * 0.392699;
+      vec4 n = texture2D(tN, vUv + vec2(cos(a), sin(a)) * R * uTexel);
       bool nb = n.a <= 0.0;
       if (cb && nb) continue;
       if (cb != nb) {
-        sil = 1.0;
+        nSil += 1.0;
         if (abs((cb ? oid(n) : id) - uHot) < 0.5) hot = 1.0;
         continue;
       }
-      if (abs(id - oid(n)) > 0.5) { occ = 1.0; continue; }        // two solids touching
-      occ = max(occ, smoothstep(uDepth, uDepth * 1.8, abs(c.a - n.a)));
+      if (abs(id - oid(n)) > 0.5 || abs(c.a - n.a) > uDepth * 1.4) nOcc += 1.0;  // another solid, or a depth jump
     }
+    if (nSil > 0.0) sil = clamp(uR + 0.5 - abs(R * cos(3.14159265 * min(nSil / 16.0, 0.5))), 0.0, 1.0);
+    if (nOcc > 0.0) occ = clamp(uR + 0.5 - abs(R * cos(3.14159265 * min(nOcc / 16.0, 0.5))), 0.0, 1.0);
     if (!cb) {
       // creases are read closer in, so they stay a thin line instead of a grey patch
       for (int i = 0; i < 4; i++) {
