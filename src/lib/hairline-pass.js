@@ -105,7 +105,7 @@ const lineFrag = /* glsl */`
   uniform sampler2D tV; uniform float uR;
   uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
-  uniform float uHair;
+  uniform float uHair, uMerge;
   bool isFill(vec4 s) { float i = oid(s), f = s.b - i; return s.a > 0.0 && i > 1.5 && f > 0.3 && f < 0.6; }
   bool isHot(float i) { return i > uHotLo - 0.5 && i < uHotHi + 0.5; }
   vec3 nrm(vec4 s) { return vec3(s.xy, sqrt(max(0.0, 1.0 - dot(s.xy, s.xy)))); }
@@ -194,7 +194,9 @@ const lineFrag = /* glsl */`
         float here = best + 0.5 * turnAt(vUv, dn, id, jump);
         float tp = turnAt(vUv + o, df, id, jump) + 0.5 * turnAt(vUv + o, dn, id, jump);
         float tm = turnAt(vUv - o, df, id, jump) + 0.5 * turnAt(vUv - o, dn, id, jump);
-        if (here >= tp && here >= tm) cre = smoothstep(uCrease, uCrease * 1.25, best);
+        // with the merge pass the whole fold band goes through: the merge draws one
+        // stroke at its middle, which a one-pixel crest cannot give it along a slant
+        if ((here >= tp && here >= tm) || uMerge > 0.5) cre = smoothstep(uCrease, uCrease * 1.25, best);
       }
     }
     if (!cb) {
@@ -218,6 +220,7 @@ const lineFrag = /* glsl */`
     // unlit dot; every other surface is the plate
     float fr = cb ? 0.0 : c.b - id;
     vec3 col = (id > 1.5 && fr > 0.3 && fr < 0.6) ? cLo : cPlate;
+    float ink = 0.0;   // how much of this pixel is line: the merge pass reads it
     if (uHair > 0.5) {
       // Hairline's hierarchy: every solid has its silhouette in edge, where it meets the
       // plate and where it lies over another solid; its creases in lo; a skeleton fill has
@@ -226,13 +229,73 @@ const lineFrag = /* glsl */`
       float own = max(part, occ * (1.0 - step(0.5, nSil)));
       col = mix(col, mix(mix(cLo, cEdge, max(partOwn, occ > 0.0 && !cFill ? 1.0 : 0.0)), cHi, hotIn), own);
       col = mix(col, mix(mix(cLo, cEdge, silOwn), cHi, hot), sil);
+      float creI = max(cre, frm) * (1.0 - step(0.5, nSil));
+      ink = max(max(creI, own), sil);
+      if (uMerge > 0.5) {
+        // the merge pass wants each line's own colour, not its blend with the plate
+        vec3 lc = cLo; float b = creI;
+        if (own >= b) { lc = mix(mix(cLo, cEdge, max(partOwn, occ > 0.0 && !cFill ? 1.0 : 0.0)), cHi, hotIn); b = own; }
+        if (sil >= b) lc = mix(mix(cLo, cEdge, silOwn), cHi, hot);
+        col = lc;
+      }
     } else {
       col = mix(col, cMid, inner);
       col = mix(col, mix(cMid, cHi, hotIn), max(part, occ * hotIn));
       col = mix(col, mix(cEdge, cHi, hot), sil);
+      ink = max(max(inner, part), sil);
     }
     if (uDebug > 0.5 && !cb) col = mix(cPlate, cHi, clamp(V(vUv) * 8.0, 0.0, 1.0));
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(col, uMerge > 0.5 ? ink : 1.0);   // the merge pass reads ink from alpha
+    #include <colorspace_fragment>
+  }`;
+
+// pass 4 (merge): lines closer together than a gap become one line of one width.
+// Every pixel measures, along four axes, the run of ink through it, bridging gaps of
+// plate up to uGap pixels between strokes; across the axis where that run is narrowest
+// (across the lines), only the run's middle stroke-width is inked. One line passes
+// through unchanged; two or three lines a hair apart become one, at the middle.
+const mergeFrag = /* glsl */`
+  uniform sampler2D tL, tN; uniform vec2 uTexel; uniform float uR, uGap;
+  uniform vec3 cPlate, cLo;
+  varying vec2 vUv;
+  float oid(vec4 s) { return floor(s.b + 0.002); }
+  const int K = 14;
+  void main() {
+    vec4 g = texture2D(tN, vUv);
+    float gid = oid(g), gf = g.b - gid;
+    vec3 base = (g.a > 0.0 && gid > 1.5 && gf > 0.3 && gf < 0.6) ? cLo : cPlate;
+    vec4 c = texture2D(tL, vUv);
+    float bestW = 1e9, bestO = 0.0; vec3 bestC = c.rgb; bool found = false;
+    for (int a = 0; a < 4; a++) {
+      vec2 d = a == 0 ? vec2(1.0, 0.0) : a == 1 ? vec2(0.0, 1.0) : a == 2 ? vec2(1.0, 1.0) : vec2(1.0, -1.0);
+      float L = a < 2 ? 1.0 : 1.41421356;
+      // the run of ink through this pixel along the axis, bridging gaps up to uGap:
+      // its amount (Σ ink, the width) and its centre (the ink-weighted mean position)
+      float sw = c.a, sk = 0.0, strong = c.a; vec3 col = c.rgb;
+      float near0 = c.a > 0.02 ? 0.0 : -1.0, near1 = near0;
+      for (int sd = 0; sd < 2; sd++) {
+        float sg = sd == 0 ? 1.0 : -1.0, gap = 0.0, first = c.a > 0.02 ? 0.0 : -1.0;
+        for (int k = 1; k <= K; k++) {
+          vec4 s = texture2D(tL, vUv + d * (sg * float(k)) * uTexel);
+          if (s.a > 0.02) {
+            sw += s.a; sk += s.a * sg * float(k); gap = 0.0;
+            if (first < 0.0) first = float(k);
+            if (s.a > strong) { strong = s.a; col = s.rgb; }
+          } else {
+            gap += L;
+            if (gap > uGap) break;
+          }
+        }
+        if (sd == 0) near0 = first; else near1 = first;
+      }
+      if (sw < 0.6) continue;   // too little ink for a line: fold noise, not a stroke
+      // off the ink, a pixel belongs to a run only between two strokes no further apart than the gap
+      if (c.a <= 0.02 && (near0 < 0.0 || near1 < 0.0 || (near0 + near1 - 1.0) * L > uGap)) continue;
+      float W = sw * L, o = sk / sw * L;
+      if (W < bestW) { bestW = W; bestO = o; bestC = col; found = true; }
+    }
+    float cov = found ? clamp(uR + 0.5 - abs(bestO), 0.0, 1.0) : 0.0;
+    gl_FragColor = vec4(mix(base, bestC, cov), 1.0);
     #include <colorspace_fragment>
   }`;
 
@@ -273,8 +336,11 @@ const guideFrag = /* glsl */`
   }`;
 
 // style 'hairline': Hairline's own palette and line hierarchy (see the line pass)
-export function createHairlinePass(renderer, { depthBias = 0, style = 'study' } = {}) {
-  const PALETTES = style === 'hairline' ? HAIRLINE : THEMES;
+// lines: 'hairline' for Hairline's line hierarchy · palette: 'hairline' for its plates too
+// merge: lines closer than a gap are drawn as one, so every line has one width
+export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', palette = 'study', merge = false } = {}) {
+  const PALETTES = palette === 'hairline' ? HAIRLINE : THEMES;
+  const style = lines;
   const opts = { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
   const rt = new THREE.WebGLRenderTarget(2, 2, { ...opts, depthBuffer: true });
   // the valley map is read between pixels (gradient, crest test), so it filters linearly
@@ -286,7 +352,7 @@ export function createHairlinePass(renderer, { depthBias = 0, style = 'study' } 
   const uniforms = {
     ...shared, tV: { value: rtV.texture }, uR: { value: 1.5 },
     uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHotLo: { value: -1 }, uHotHi: { value: -1 }, uWorldPx: { value: 0.001 },
-    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 },
+    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
     cPlate: { value: col('plate') }, cHi: { value: col('hi') }, cEdge: { value: col('edge') },
     cMid: { value: col('mid') }, cLo: { value: col('lo') },
@@ -300,6 +366,9 @@ export function createHairlinePass(renderer, { depthBias = 0, style = 'study' } 
   };
   const valleyScene = quad(valleyFrag, valleyUniforms);
   const lineScene = quad(lineFrag, uniforms);
+  const rtL = new THREE.WebGLRenderTarget(2, 2, { ...opts, depthBuffer: false });
+  const mergeUniforms = { tL: { value: rtL.texture }, tN: shared.tN, uTexel: shared.uTexel, uR: uniforms.uR, uGap: { value: 4 }, cPlate: uniforms.cPlate, cLo: uniforms.cLo };
+  const mergeScene = quad(mergeFrag, mergeUniforms);
   const biasU = { value: depthBias };
   const guideUniforms = {
     tN: shared.tN, uRes: { value: new THREE.Vector2(2, 2) }, uR: uniforms.uR, uDepthBias: biasU,
@@ -321,7 +390,7 @@ export function createHairlinePass(renderer, { depthBias = 0, style = 'study' } 
       });
     },
     setSize(w, h, pixelRatio) {
-      rt.setSize(w, h); rtV.setSize(w, h); ratio = pixelRatio;
+      rt.setSize(w, h); rtV.setSize(w, h); rtL.setSize(w, h); ratio = pixelRatio;
       shared.uTexel.value.set(1 / w, 1 / h);
       guideUniforms.uRes.value.set(w, h);
       guideUniforms.uDash.value = 1.4 * pixelRatio;
@@ -375,7 +444,12 @@ export function createHairlinePass(renderer, { depthBias = 0, style = 'study' } 
       renderer.setClearColor(clear, 0);
       renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, camera);
       renderer.setRenderTarget(rtV); renderer.render(valleyScene, quadCam);
-      renderer.setRenderTarget(null); renderer.render(lineScene, quadCam);
+      if (merge) {
+        // lines whose middles are closer than ~3½ CSS px become one
+        mergeUniforms.uGap.value = Math.max(2, 3.5 * ratio - 2 * uniforms.uR.value);
+        renderer.setRenderTarget(rtL); renderer.render(lineScene, quadCam);
+        renderer.setRenderTarget(null); renderer.render(mergeScene, quadCam);
+      } else { renderer.setRenderTarget(null); renderer.render(lineScene, quadCam); }
       if (overlay && guideUniforms.uOpacity.value > 0.001) {
         const ac = renderer.autoClear, mask = camera.layers.mask;
         renderer.autoClear = false; camera.layers.set(1);

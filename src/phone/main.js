@@ -35,7 +35,8 @@ camera.position.set(Math.sin(az) * Math.cos(el) * dist, target.y + Math.sin(el) 
 camera.lookAt(target);
 
 // depths stored relative to the camera's distance, so half floats hold them to ~0.5 mm
-const pass = createHairlinePass(renderer, { depthBias: dist - 1, style: 'hairline' });
+// Hairline's line hierarchy on David's page colours; close lines merge into one
+const pass = createHairlinePass(renderer, { depthBias: dist - 1, lines: 'hairline', merge: true });
 
 /* ---- stage ------------------------------------------------------------------ */
 const { base, spin, R } = buildPlatter(pass);
@@ -275,7 +276,7 @@ function syncTheme() {
   const dark = isDark();
   themeBtn.setAttribute('aria-pressed', dark);
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.content = dark ? '#08090a' : '#ffffff';
+  if (meta) meta.content = dark ? '#131311' : '#f4f2eb';
   pass.setTheme(dark ? 'dark' : 'light');
   lookVersion++;
 }

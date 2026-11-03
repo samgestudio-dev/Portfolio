@@ -76,22 +76,23 @@ export function buildPhone(pass, gltfScene, firstId) {
   };
 
   /* body: everything at the back, kept together: the back glass with its plateau, flash
-     and microphone, the camera module standing in the plateau, the metal-cased battery,
-     and the titanium frame with its buttons. Port, speaker holes and screw are drawn as
+     and microphone, the camera module standing in the plateau, and the titanium frame
+     with its buttons. Port, speaker holes and screw are drawn as
      part of the frame (rule 09: draw less). */
   const body = layer('body', 0);
   take(body, 'Back Glass'); take(body, 'Back Flash'); take(body, 'Back Mic mesh');
   take(body, 'Back Camera module');
-  { const m = block(pass, next(), [-0.0335, -0.0635, 0.0335, 0.0465], 0.0045, -0.0016, 0.0016); m.userData.id = id - 1; own(body, m); }
   const band = take(body, 'Body');
   for (const n of ['USB C port', 'Speaker mesh', 'Screw']) take(body, n, band);
   for (const n of ['Button Action', 'Button Volume Up', 'Button Volume Down', 'Button Power On/Off', 'Camera Control']) take(body, n);
 
   /* components: one stacked board under the plateau, a cut-out where the camera passes,
-     the A19 Pro, C1X modem and N1 chip facing the display, the front camera, and at the
-     foot the Taptic Engine and the speaker */
+     the A19 Pro, C1X modem and N1 chip facing the display, the front camera, the
+     metal-cased battery filling the rest, and at the foot the Taptic Engine and the
+     speaker */
   const parts = layer('components', 0.013);
   {
+    const b = block(pass, next(), [-0.0335, -0.0635, 0.0335, 0.0465], 0.0045, -0.0016, 0.0016); b.userData.id = id - 1; own(parts, b);
     const sh = rrect(fx(0.033), 0.0498, fx(-0.033), 0.0766, 0.006);
     sh.holes.push(rrect(fx(0.0302), 0.0554, fx(0.0134), 0.0722, 0.004));
     const m = new THREE.Mesh(slab(sh), pass.material(next()));
