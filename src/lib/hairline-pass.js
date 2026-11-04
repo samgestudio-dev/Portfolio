@@ -103,7 +103,7 @@ const valleyFrag = /* glsl */`
 const lineFrag = /* glsl */`
   ${common}
   uniform sampler2D tV; uniform float uR;
-  uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx, uReach;
+  uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx, uReach, uCrest;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
   uniform float uHair, uMerge, uAlpha;
   bool isFill(vec4 s) { float i = oid(s), f = s.b - i; return s.a > 0.0 && i > 1.5 && f > 0.3 && f < 0.6; }
@@ -190,7 +190,7 @@ const lineFrag = /* glsl */`
         if (t > best) { best = t; bdir = dir; }
       }
       if (best > uCrease) {
-        vec2 o = bdir * max(1.0, 2.0 * uR) * sqrt(uReach) * uTexel, df = bdir * rf * uTexel, dn = bdir * rn * uTexel;
+        vec2 o = bdir * max(1.0, 2.0 * uR) * uCrest * uTexel, df = bdir * rf * uTexel, dn = bdir * rn * uTexel;
         float here = best + 0.5 * turnAt(vUv, dn, id, jump);
         float tp = turnAt(vUv + o, df, id, jump) + 0.5 * turnAt(vUv + o, dn, id, jump);
         float tm = turnAt(vUv - o, df, id, jump) + 0.5 * turnAt(vUv - o, dn, id, jump);
@@ -356,7 +356,7 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
   const uniforms = {
     ...shared, tV: { value: rtV.texture }, uR: { value: 1.5 },
     uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHotLo: { value: -1 }, uHotHi: { value: -1 }, uWorldPx: { value: 0.001 },
-    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uReach: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 }, uAlpha: { value: transparent ? 1 : 0 },
+    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uReach: { value: 1 }, uCrest: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 }, uAlpha: { value: transparent ? 1 : 0 },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
     cPlate: { value: col('plate') }, cHi: { value: col('hi') }, cEdge: { value: col('edge') },
     cMid: { value: col('mid') }, cLo: { value: col('lo') },
@@ -419,7 +419,10 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
     // reach: how far, in multiples of the usual few pixels, a fold or a valley is looked
     // for. Seen close, the same fold spans many more pixels and turns too little across a
     // few of them to show: a longer reach measures it over the same stretch of surface.
-    setReach(k) { reach = k; uniforms.uReach.value = k; valleyUniforms.uFormR.value = 5 * ratio * reach; },
+    // crest: how far either side a fold's crest is checked, as a power of the reach
+    setReach(k, crest = 0.5) { reach = k; uniforms.uReach.value = k; uniforms.uCrest.value = Math.pow(k, crest); valleyUniforms.uFormR.value = 5 * ratio * reach; },
+    // depth: how far behind (in the scene's units) a part must lie for its edge to be a contour
+    setDepth(v) { uniforms.uDepth.value = v; },
     // view depth subtracted before it is stored, so half floats stay precise far from the eye
     setDepthBias(v) { biasU.value = v; },
     // segments: [[a, b], ...] in the parent's space; returns a mesh to add to the scene

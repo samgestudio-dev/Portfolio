@@ -6,6 +6,7 @@ import { view, place } from '../lib/persp.js';
 import { hull, inside, circ, poly, seg, clamp, lerp } from '../lib/iso.js';
 import { fillKeyed } from '../lib/keyed-fill.js';
 import { SVG_OBJECTS } from './objects.js';
+import { createTune } from './tune.js';
 
 /* The home: four objects on a ring, seen in perspective, one for each way of making.
 
@@ -85,8 +86,36 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(window.DAVID_MODEL_URL |
   davidReady = true; looks++;
 });
 const REACH_AT = 900;                         // buffer pixels to David's height at which his lines were tuned
-let REACH_POW = 0.5, REACH_MAX = 3, REACH_FIX = 0;   // how much of the zoom the reach follows, its cap; ?reach=k fixes it
+let REACH_FIX = 0;                            // ?reach=k fixes the reach, for still pictures
 { const m = location.search.match(/[?&]reach=([\d.]+)/); if (m) REACH_FIX = +m[1]; }
+/* ---- David's numbers, tunable: the close look only; seen small he keeps FAR ---------
+   Tune in the header (or T) opens the panel; values stay in this browser and Copy values
+   gives them out to be written in here as the new defaults.                            */
+const FAR = { detail: 0.5, muscle: 0.5, stroke: 0.9, depth: 0.004 };
+const tune = createTune({
+  title: 'David · close up', storeKey: 'home-tune-david',
+  spec: [
+    { group: 'Lines', key: 'detail', label: 'Detail (fold angle)', min: 0, max: 1, step: 0.01, value: 0.5 },
+    { key: 'muscle', label: 'Muscle lines', min: 0, max: 1, step: 0.01, value: 0.5 },
+    { key: 'stroke', label: 'Stroke', min: 0.5, max: 2.5, step: 0.05, value: 0.9 },
+    { key: 'reachPow', label: 'Reach · follows zoom', min: 0, max: 1, step: 0.05, value: 0.5 },
+    { key: 'reachMax', label: 'Reach · cap', min: 1, max: 6, step: 0.1, value: 3 },
+    { key: 'crest', label: 'Crest spread', min: 0, max: 1, step: 0.05, value: 0.5 },
+    { key: 'depth', label: 'Contour depth', min: 0.001, max: 0.02, step: 0.0005, value: 0.004 },
+    { group: 'Framing', key: 'headR', label: 'Head size (smaller = closer)', min: 0.04, max: 0.3, step: 0.005, value: 0.075 },
+    { key: 'headY', label: 'Aim up / down', min: -0.06, max: 0.06, step: 0.002, value: 0 },
+    { key: 'el', label: 'Camera height (rad)', min: 0, max: 0.7, step: 0.01, value: 0.14 },
+    { key: 'fov', label: 'Field of view (°)', min: 10, max: 50, step: 1, value: 24 },
+    { group: 'Motion', key: 'yaw', label: 'Facing (rad)', min: -3.14, max: 3.14, step: 0.01, value: -0.8 },
+    { key: 'sway', label: 'Sway (rad)', min: 0, max: 1.5, step: 0.01, value: 0.45 },
+    { key: 'swaySpeed', label: 'Sway speed', min: 0, max: 1.5, step: 0.01, value: 0.32 },
+  ],
+  onAction: { 'Go to David': () => enter(0, 'tune'), 'All four': () => leave() },
+});
+const T = tune.v;
+document.getElementById('tune').addEventListener('click', () => tune.toggle());
+addEventListener('keydown', e => { if ((e.key === 't' || e.key === 'T') && !e.metaKey && !e.ctrlKey) tune.toggle(); });
+if (/[?&]tune/.test(location.search)) tune.toggle(true);
 const pixelRatio = () => (window.devicePixelRatio >= 3 ? 2 : Math.min(window.devicePixelRatio * 1.5, 2.5));
 
 /* ---- the model -------------------------------------------------------------- */
@@ -119,7 +148,8 @@ function overviewCam() {
 }
 // the camera for a close look at o, once it stands at the front: low, near, to one side
 function closeCam(o, sd) {
-  const el = narrow() ? 0.2 : 0.14, fov = narrow() ? 28 : 24;
+  let el = narrow() ? 0.2 : 0.14, fov = narrow() ? 28 : 24;
+  if (o.id === 'art') { el = T.el + (narrow() ? 0.06 : 0); fov = T.fov + (narrow() ? 4 : 0); }
   const c = [0, -RR, LIFT];
   let pts, F;
   if (o.id === 'art') {
@@ -128,7 +158,7 @@ function closeCam(o, sd) {
     const hd = o.head || { x: 0, z: 0, y: o.face, r: o.faceR };
     const yaw = o.base + o.spin, cs = Math.cos(yaw), sn = Math.sin(yaw);
     const lx = hd.x * o.s, ly = -hd.z * o.s;                     // his (x, z) → the world's (x, −y)
-    const hc = [c[0] + lx * cs - ly * sn, c[1] + lx * sn + ly * cs, LIFT + hd.y * o.s], rr = hd.r * o.s;
+    const hc = [c[0] + lx * cs - ly * sn, c[1] + lx * sn + ly * cs, LIFT + (hd.y + T.headY) * o.s], rr = T.headR * o.s;
     F = hc;
     pts = circ(0, 0, rr, 24).flatMap(q => [[hc[0] + q.u, hc[1] + q.v, hc[2] - rr * 1.25], [hc[0] + q.u, hc[1] + q.v, hc[2] + rr]]);
   } else {
@@ -350,7 +380,6 @@ resize();
 {
   const q = location.search, a = q.match(/[?&]at=(\w+)/), r = q.match(/[?&]ring=(-?[\d.]+)/);
   if (r) ring = +r[1];
-  const ay = q.match(/[?&]artyaw=(-?[\d.]+)/); if (ay) OBJECTS[0].base = +ay[1];
   const i = OBJECTS.findIndex(o => '#' + o.id === location.hash || (a && o.id === a[1]));
   if (i >= 0) { sel = i; side = narrow() ? 1 : -1; ring = -i * QUARTER; panelAt = 0; }
 }
@@ -390,7 +419,11 @@ function drawDavid(V, o) {
   pass.setScale(perPx);
   // seen close, look for folds and valleys over the same stretch of marble as on his own
   // page (about 900 buffer pixels to his height there); seen small, as there
-  pass.setReach(REACH_FIX || clamp(Math.pow(1 / perPx / REACH_AT, REACH_POW), 1, REACH_MAX));
+  // how close he is seen: 0 at his size on the ring, 1 from three times his own page's size
+  const zoom = 1 / perPx / REACH_AT, near = clamp(Math.log(zoom) / Math.log(3), 0, 1);
+  pass.setReach(REACH_FIX || clamp(Math.pow(zoom, T.reachPow), 1, T.reachMax), T.crest);
+  pass.setLook({ detail: lerp(FAR.detail, T.detail, near), muscle: lerp(FAR.muscle, T.muscle, near), stroke: lerp(FAR.stroke, T.stroke, near) });
+  pass.setDepth(lerp(FAR.depth, T.depth, near));
   pass.setDepthBias(Math.max(0, d / SD - 0.8));
   pass.render(scene3, cam3, hot === o.i ? 1 : -1);
 }
@@ -439,7 +472,7 @@ function frame(now) {
   for (const o of OBJECTS) o.op = lerp(o.op, sel < 0 || o.i === sel ? 1 : 0, 1 - Math.exp(-dt * (sel < 0 ? 3 : 5)));
   for (const o of OBJECTS) {
     if (o.i === sel && !reduced) {
-      if (o.id === 'art') o.spin = lerp(o.spin, 0.45 * Math.sin(clock * 0.32), 1 - Math.exp(-dt * 2));
+      if (o.id === 'art') o.spin = lerp(o.spin, T.sway * Math.sin(clock * T.swaySpeed), 1 - Math.exp(-dt * 2));
       else { o.spinV += (0.24 - o.spinV) * (1 - Math.exp(-dt * 1.2)); o.spin += o.spinV * dt; }
     } else if (o.spin !== 0) {
       const home = Math.round(o.spin / TAU) * TAU;
@@ -447,6 +480,7 @@ function frame(now) {
       if (Math.abs(o.spin - home) < 1e-3) o.spin = 0;
     }
   }
+  art.base = T.yaw;
   cam = currentCam();
   if (sel >= 0 && clock >= panelAt) { panelAt = Infinity; showPanel(true); }
   draw();
