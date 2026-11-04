@@ -1,18 +1,18 @@
-import { rings, rrect, circ, prism3, poly, open, hull } from '../lib/iso.js';
+import { rings, rrect, circ, prism3, poly, hull } from '../lib/iso.js';
 
 /* The spring atlas, on Hairline's Terrain: a field of 9 × 9 rounded pillars on a plinth,
    each pillar one spring. Across, its stiffness k, from soft to stiff; back, its damping
    c, from little to much. At rest each pillar stands as tall as its spring takes to
    settle, so the field is a map of it: high where a spring rings on (soft, underdamped)
    and where it creeps in (stiff damping, overdamped), low along the valley between,
-   where a spring is damped just enough. A dot on a lid down each column, and a dashed line
-   on the bed, trace that valley's floor, critical damping (ζ = 1). Graduated marks round the rim say which way k and c
+   where a spring is damped just enough. A dot on a lid down each column traces that
+   valley's floor, critical damping (ζ = 1). Graduated marks round the rim say which way k and c
    grow. Plucked, every pillar answers by its own two numbers.
    Millimetres; x across the field (k), y back (c), z up.                             */
 
-export const N = 9, CELL = 8.6, FOOT = 7.2, M = 6, EXT = N * CELL;
+export const N = 9, CELL = 8.6, FOOT = 7.2, M = 7, EXT = N * CELL;
 export const PB = 6;                                   // the plinth's height: it stands on the platter, clear of the studs
-const BED = 1.2, ZB = PB - BED;                        // how far the bed is sunk under the rim; the bed's level
+const BEV = 1.0, GAP = 1.6, ZB = PB;                  // the plinth's bevel; the opening's margin round the field; the field's floor
 export const KS = [40, 60, 80, 100, 140, 180, 240, 320, 400];
 export const CS = [2, 4, 6, 9, 12, 18, 24, 32, 40];
 const X0 = -EXT / 2, Y0 = -EXT / 2;
@@ -42,47 +42,35 @@ for (let i = 0; i < N; i++) {
 export const AMP = 8;                                  // how far a pluck lifts a pillar, mm
 export const CAP = 1.2;                                // the ceiling stacked kicks bend into, in plucks
 
-// a value's place along a scale of values (fractional index), for the critical line
-const along = (vals, v) => {
-  if (v <= vals[0]) return (v - vals[0]) / (vals[1] - vals[0]);
-  for (let n = 0; n < vals.length - 1; n++) if (v <= vals[n + 1]) return n + (v - vals[n]) / (vals[n + 1] - vals[n]);
-  return vals.length - 1 + (v - vals.at(-1)) / (vals.at(-1) - vals.at(-2));
-};
-
 const ZF = o => ({ o, U: [1, 0, 0], V: [0, 1, 0], W: [0, 0, 1] });
 const O = [0, 0, 0];
 
 /* Everything with the pillars at heights hs, as [class, d, name] in paint order. hot: −1 or a cell. */
 export function atlas(P, T, hs, hot) {
   const out = [];
-  // the plinth, its rim, and the bed sunk inside it
-  const half = EXT / 2 + M;
-  const [pr, pi] = rings(-half, -half, half, half, 10, 2.2, 6);
+  // the plinth: a rounded slab with a narrow bevel, so its crease hugs the outer edge
+  const half = EXT / 2 + M, R = 10;
+  const [pr, pi] = rings(-half, -half, half, half, R, BEV, 8);
   const pl = prism3(P, T, ZF(O), pr, pi, 0, PB);
   out.push(['sil', pl.sil, 'plinth'], ['cr', pl.crease, 'plinth-cr']);
-  const bed = rrect(-EXT / 2 - 2, -EXT / 2 - 2, EXT / 2 + 2, EXT / 2 + 2, 4.5, 6);
-  out.push(['bed', poly(bed.map(q => P(q.u, q.v, ZB))), 'bed']);
-  out.push(['cr', poly(bed.map(q => P(q.u, q.v, PB))), 'rim']);
-  // graduated marks round the rim: dots that grow with k along the two edges across, ticks
-  // that lengthen with c along the two edges back
-  const rim = EXT / 2 + M / 2 + 0.5;
+  // the field's opening in the top, one line, its corners concentric with the plinth's
+  const bh = EXT / 2 + GAP;
+  out.push(['cr', poly(rrect(-bh, -bh, bh, bh, R - (half - bh), 8).map(q => P(q.u, q.v, PB))), 'rim']);
+  // graduated marks in the band between the opening and the bevel, on the cells' centre
+  // lines: dots that grow with k along the edge across, ticks that lengthen with c along
+  // the edge back. Each row sits on whichever of its two edges is nearer the viewer, so it
+  // is never left half hidden behind the pillars.
+  const band = (bh + half - BEV) / 2, room = half - BEV - bh;
+  const sy = T[1] >= 0 ? 1 : -1, sx = T[0] >= 0 ? 1 : -1;
   let dots = '', ticks = '';
   for (let n = 0; n < N; n++) {
-    const x = X0 + (n + 0.5) * CELL, r = 0.35 + n * 0.12;
-    for (const sy of [-1, 1]) dots += poly(circ(x, sy * rim, r, 12).map(q => P(q.u, q.v, PB)));
-    const y = Y0 + (n + 0.5) * CELL, L = 0.8 + n * 0.32;
-    for (const sx of [-1, 1]) ticks += `M${P(sx * (rim - L / 2), y, PB).join(' ')}L${P(sx * (rim + L / 2), y, PB).join(' ')}`;
+    const at = X0 + (n + 0.5) * CELL, f = n / (N - 1);
+    const r = room * (0.08 + 0.17 * f);
+    dots += poly(circ(at, sy * band, r, 16).map(q => P(q.u, q.v, PB)));
+    const L = room * (0.2 + 0.5 * f);
+    ticks += `M${P(sx * (band - L / 2), at, PB).join(' ')}L${P(sx * (band + L / 2), at, PB).join(' ')}`;
   }
   out.push(['dot', dots, 'k-marks'], ['mk', ticks, 'c-marks']);
-  // critical damping, c = 2√k, traced on the bed: the floor of the valley
-  const line = [];
-  for (let n = 0; n <= 60; n++) {
-    const k = KS[0] + (KS.at(-1) - KS[0]) * (n / 60), c = 2 * Math.sqrt(k);
-    const fi = along(KS, k), fj = along(CS, c);
-    if (fj < -0.5 || fj > N - 0.5) continue;
-    line.push(P(X0 + (fi + 0.5) * CELL, Y0 + (fj + 0.5) * CELL, ZB));
-  }
-  out.push(['guide', open(line), 'critical']);
 
   // the pillars, far to near; the chosen one carries a 3 × 3 mark of dots on its lid
   const order = CELLS.map((c, n) => ({ c, n, key: T[0] * c.cx + T[1] * c.cy })).sort((a, b) => a.key - b.key);

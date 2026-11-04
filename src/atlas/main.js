@@ -18,7 +18,8 @@ import { atlas, restHeights, restHull, CELLS, EXTENT, AMP, CAP, PB } from './sce
             by distance), kicking each spring as it passes; each region rings at its own
             rate and dies its own way. Tap again and again and the rings follow one
             another out, crossing and stacking. Space or Pluck all, out from the middle.
-   Idle     every five seconds a tap at a random spot.
+   Idle     every five seconds a tap at a random spot, never the same pillar twice
+            until all 81 have had theirs.
    Drag     spins the turntable; a trackpad swipe too. ← → a quarter turn.          */
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -212,8 +213,19 @@ applyLook();
 /* ---- the tour: a tap at a random spot on the field, every five seconds ----------- */
 const TOUR_EVERY = 5;
 let tourT = 0, tourOn = !reduced;
+// the spots come from a shuffled deck of all 81: none comes up twice before every one has,
+// and a new deck never opens on the spot the last one ended with
+let deck = [], lastTap = -1;
+function nextSpot() {
+  if (!deck.length) {
+    deck = CELLS.map((_, n) => n);
+    for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+    if (deck.at(-1) === lastTap) [deck[0], deck[deck.length - 1]] = [deck[deck.length - 1], deck[0]];
+  }
+  return (lastTap = deck.pop());
+}
 function tourTap() {
-  const n = Math.floor(Math.random() * NC), c = CELLS[n];
+  const n = nextSpot(), c = CELLS[n];
   hot = n; pluckAll(c.cx, c.cy);
 }
 function stopTour() { if (tourOn) hot = -1; tourOn = false; tourT = 0; }
