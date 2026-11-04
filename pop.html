@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f3ede1" />
+    <title>Sam — Four Ways of Making</title>
+    <meta name="claude:viewport-fit-sides" content="cover" />
+    <meta name="description" content="Sam's portfolio: interfaces, systems, motion and art, as four objects in four colours." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      /* One look, committed: a printed pop page, so it does not follow the system theme */
+      :root {
+        --paper: #f3ede1; --ink: #111111; --white: #ffffff; --muted: #5c574e;
+        --red: #ff4b1f; --blue: #2f5cff; --yellow: #ffd23a; --pink: #ff8ccf; --green: #19c37d;
+        --line: 3px; --gut: 14px; --shadow: 8px 8px 0 var(--ink);
+        --ease: cubic-bezier(.32, .72, 0, 1);
+        --display: 'Archivo', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+        --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+        color-scheme: light;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--display); font-variation-settings: 'wdth' 100; }
+      body { overflow-x: hidden; }
+      main { overflow-x: clip; }
+      body.locked { overflow: hidden; }
+      a { color: inherit; }
+      .mono { font-family: var(--mono); }
+      .wrap { padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); }
+      .label { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
+      ::selection { background: var(--yellow); color: var(--ink); }
+
+      /* ---- header ---- */
+      header.top { position: sticky; top: 0; z-index: 30; background: var(--paper); border-bottom: var(--line) solid var(--ink); display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; padding-block: calc(12px + env(safe-area-inset-top, 0px)) 12px; }
+      .mark { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 900; font-variation-settings: 'wdth' 70; font-size: 30px; letter-spacing: -.5px; line-height: 1; }
+      .mark svg { width: 30px; height: 30px; animation: spin 14s linear infinite; }
+      nav.links { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+      nav.links a { text-decoration: none; font-family: var(--mono); font-size: 12px; font-weight: 500; padding: 7px 12px; border: 2px solid var(--ink); border-radius: 999px; background: var(--white); transition: transform .2s var(--ease), box-shadow .2s var(--ease), background .2s; }
+      nav.links a:hover { transform: translate(-2px, -2px); box-shadow: 3px 3px 0 var(--ink); background: var(--yellow); }
+      nav.links a:focus-visible, .btn:focus-visible, .panel:focus-visible, .row:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+      .now { font-family: var(--mono); font-size: 12px; text-align: right; white-space: nowrap; }
+      .now i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); border: 2px solid var(--ink); margin-right: 6px; vertical-align: -1px; }
+
+      /* ---- hero ---- */
+      .hero { padding-block: 34px 28px; position: relative; }
+      .hero-top { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 32px; align-items: end; margin-bottom: 28px; }
+      .hero h1 { margin: 0; font-weight: 900; font-variation-settings: 'wdth' 72; text-transform: uppercase; font-size: clamp(40px, 6.1vw, 104px); line-height: .92; letter-spacing: -.02em; text-wrap: balance; }
+      .nw { white-space: nowrap; }
+      .hl { display: inline-block; padding: 0 .12em; margin: .02em 0; border: var(--line) solid var(--ink); box-shadow: 5px 5px 0 var(--ink); transform: rotate(var(--r, -1deg)); transition: transform .3s var(--ease), box-shadow .3s var(--ease); cursor: pointer; text-decoration: none; }
+      .hl:hover, .hl.on { transform: rotate(0) translate(-3px, -3px); box-shadow: 8px 8px 0 var(--ink); }
+      .hl.art { background: var(--red); --r: 1.2deg; } .hl.product { background: var(--blue); color: var(--white); --r: -1.5deg; }
+      .hl.system { background: var(--yellow); --r: .8deg; } .hl.motion { background: var(--pink); --r: -1deg; }
+      .hero-side { display: flex; flex-direction: column; gap: 14px; padding-bottom: 10px; }
+      .hero-side p { margin: 0; font-size: 16px; line-height: 1.45; font-weight: 450; max-width: 32ch; }
+      .hero-side .label { color: var(--muted); }
+
+      /* ---- the comic page: four panels ---- */
+      .comic { display: grid; gap: var(--gut); grid-template-columns: 1.15fr 1fr 1fr; grid-template-rows: 1fr 1fr; grid-template-areas: "art product system" "art product motion"; height: min(80vh, 820px); min-height: 560px; position: relative; }
+      .panel { position: relative; border: var(--line) solid var(--ink); background: var(--c); overflow: hidden; cursor: pointer; isolation: isolate; outline: none;
+        transition: transform .35s var(--ease), box-shadow .35s var(--ease); touch-action: pan-y; }
+      .panel:hover, .panel.on { transform: translate(-4px, -4px); box-shadow: var(--shadow); }
+      .panel::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+        background: radial-gradient(circle, rgb(0 0 0 / .16) 1.5px, transparent 1.9px) 0 0 / 10px 10px;
+        -webkit-mask: linear-gradient(140deg, transparent 35%, #000 85%); mask: linear-gradient(140deg, transparent 35%, #000 85%); }
+      .panel.art { grid-area: art; --c: var(--red); } .panel.product { grid-area: product; --c: var(--blue); }
+      .panel.system { grid-area: system; --c: var(--yellow); } .panel.motion { grid-area: motion; --c: var(--pink); }
+      .p-stage { position: absolute; inset: 44px 12px 64px; display: grid; place-items: center; }
+      .p-num { position: absolute; top: 12px; left: 12px; z-index: 2; font-family: var(--mono); font-weight: 600; font-size: 12px; background: var(--ink); color: var(--white); border-radius: 999px; padding: 5px 10px; }
+      .p-hint { position: absolute; top: 12px; right: 12px; z-index: 2; font-family: var(--mono); font-size: 11px; background: var(--white); border: 2px solid var(--ink); border-radius: 999px; padding: 3px 9px; opacity: 0; transform: translateY(-4px); transition: opacity .25s, transform .25s var(--ease); }
+      .panel:hover .p-hint, .panel.on .p-hint { opacity: 1; transform: none; }
+      .p-cap { position: absolute; left: 12px; bottom: 12px; z-index: 2; background: var(--white); border: var(--line) solid var(--ink); padding: 6px 12px 7px; display: flex; flex-direction: column; gap: 2px; max-width: calc(100% - 24px); }
+      .p-cap b { font-weight: 900; font-variation-settings: 'wdth' 72; text-transform: uppercase; font-size: clamp(22px, 2.4vw, 34px); line-height: .95; }
+      .p-cap span { font-family: var(--mono); font-size: 11px; }
+      .obj-svg, .obj-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .obj-svg { overflow: visible; }
+      .turning { cursor: grabbing; }
+
+      /* the drawings in ink: Hairline's solids, printed */
+      .obj-svg g { filter: drop-shadow(5px 5px 0 var(--ink)); }
+      .obj-svg path { fill: var(--white); stroke: var(--ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+      .obj-svg .cr { fill: none; stroke-width: 1; }
+      .obj-svg .sil.ui { stroke-width: 1.1; }
+      .obj-svg .fill { fill: var(--tint, var(--yellow)); stroke: var(--ink); stroke-width: 1; }
+      .obj-svg .mk, .obj-svg .nf { fill: none; stroke-width: 1; }
+      .obj-svg .lo { stroke-width: .8; }
+      .obj-svg .dot, .obj-svg .hi-dot { fill: var(--ink); stroke: none; }
+      .obj-svg .bed { fill: var(--tint, var(--white)); stroke-width: 1; }
+      .obj-svg .guide { fill: none; stroke-width: 1.2; stroke-dasharray: 2 4; }
+      .obj-canvas { filter: drop-shadow(5px 5px 0 var(--ink)); }
+      .panel.product { --tint: var(--yellow); } .panel.system { --tint: var(--pink); } .panel.motion { --tint: var(--yellow); }
+
+      /* a starburst sticker */
+      .burst { position: absolute; z-index: 5; width: 132px; height: 132px; right: -14px; top: -58px; pointer-events: none; }
+      .burst svg { width: 100%; height: 100%; animation: spin 30s linear infinite; overflow: visible; }
+      .burst span { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font-weight: 900; font-variation-settings: 'wdth' 70; text-transform: uppercase; font-size: 17px; line-height: .95; transform: rotate(-12deg); }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      /* ---- marquee ---- */
+      .marquee { border-block: var(--line) solid var(--ink); background: var(--yellow); overflow: hidden; white-space: nowrap; margin-top: 40px; }
+      .marquee.blue { background: var(--blue); color: var(--white); margin-top: 0; }
+      .marquee div { display: inline-flex; gap: 28px; padding-block: 14px; animation: slide 28s linear infinite; font-weight: 900; font-variation-settings: 'wdth' 72; text-transform: uppercase; font-size: clamp(32px, 4.6vw, 64px); line-height: 1; }
+      .marquee.blue div { animation-direction: reverse; animation-duration: 34s; }
+      .marquee em { font-style: normal; display: inline-block; transform: translateY(-.05em); }
+      @keyframes slide { to { transform: translateX(-50%); } }
+
+      /* ---- sections ---- */
+      section.block { padding-block: 72px; border-bottom: var(--line) solid var(--ink); }
+      .sec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 28px; flex-wrap: wrap; }
+      .sec-head h2 { margin: 0; font-weight: 900; font-variation-settings: 'wdth' 72; text-transform: uppercase; font-size: clamp(40px, 6vw, 96px); line-height: .9; letter-spacing: -.01em; }
+
+      /* the index of work: one row a piece */
+      .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+      .btn { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--ink); background: var(--white); border: 2px solid var(--ink); border-radius: 999px; padding: 7px 13px; cursor: pointer; transition: transform .2s var(--ease), box-shadow .2s var(--ease), background .2s; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+      .btn:hover { transform: translate(-2px, -2px); box-shadow: 3px 3px 0 var(--ink); }
+      .btn[aria-pressed="true"] { background: var(--ink); color: var(--white); }
+      .btn .sw { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink); background: var(--c); }
+      .btn[aria-pressed="true"] .sw { border-color: var(--white); }
+      .index { border-top: var(--line) solid var(--ink); }
+      .row { position: relative; display: grid; grid-template-columns: 64px minmax(0, 1.4fr) minmax(0, 1fr) 110px 120px; gap: 16px; align-items: center; padding: 18px 8px; border-bottom: 2px solid var(--ink); text-decoration: none; isolation: isolate; cursor: pointer; }
+      .row::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--c); transform: scaleX(0); transform-origin: left; transition: transform .45s var(--ease); }
+      .row:hover::before, .row:focus-visible::before { transform: scaleX(1); }
+      .row .n { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+      .row .t { font-weight: 850; font-variation-settings: 'wdth' 78; text-transform: uppercase; font-size: clamp(22px, 2.6vw, 38px); line-height: 1; transition: transform .45s var(--ease); }
+      .row:hover .t { transform: translateX(10px); }
+      .row .k, .row .y, .row .s { font-family: var(--mono); font-size: 12px; }
+      .row .s { justify-self: end; border: 2px solid var(--ink); border-radius: 999px; padding: 3px 9px; background: var(--white); white-space: nowrap; }
+      .row .s.lab { background: var(--ink); color: var(--white); }
+      .row[hidden] { display: none; }
+      .peek { position: fixed; left: 0; top: 0; z-index: 40; width: 190px; height: 150px; pointer-events: none; border: var(--line) solid var(--ink); background: var(--c, var(--yellow)); box-shadow: 6px 6px 0 var(--ink);
+        display: flex; flex-direction: column; justify-content: space-between; padding: 10px 12px; opacity: 0; transform: translate(-50%, -50%) scale(.6) rotate(-4deg); transition: opacity .2s, transform .3s var(--ease); }
+      .peek.on { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-4deg); }
+      .peek b { font-weight: 900; font-variation-settings: 'wdth' 70; font-size: 64px; line-height: .8; }
+      .peek span { font-family: var(--mono); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+
+      /* three lines, poster-sized */
+      .say { display: flex; flex-direction: column; gap: 14px; padding-block: 90px; border-bottom: var(--line) solid var(--ink); overflow: hidden; }
+      .say p { margin: 0; font-weight: 900; font-variation-settings: 'wdth' 68; text-transform: uppercase; font-size: clamp(48px, 10.5vw, 190px); line-height: .86; letter-spacing: -.02em; white-space: nowrap;
+        transform: translateX(var(--from, -8%)); opacity: 0; transition: transform 1s var(--ease), opacity .6s; }
+      .say p:nth-child(2) { --from: 8%; padding-left: 8vw; } .say p:nth-child(3) { padding-left: 16vw; }
+      .say.in p { transform: none; opacity: 1; }
+      .say.in p:nth-child(2) { transition-delay: .09s; } .say.in p:nth-child(3) { transition-delay: .18s; }
+      .say mark { color: inherit; padding: 0 .08em; border: var(--line) solid var(--ink); box-shadow: 6px 6px 0 var(--ink); }
+      .say p:nth-child(1) mark { background: var(--blue); color: var(--white); } .say p:nth-child(2) mark { background: var(--pink); } .say p:nth-child(3) mark { background: var(--yellow); }
+
+      /* about: a short bio, and what each project gets */
+      .about { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 48px; }
+      .about .bio { font-size: clamp(20px, 2vw, 28px); line-height: 1.25; font-weight: 600; margin: 0; max-width: 26ch; }
+      .services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gut); }
+      .svc { border: var(--line) solid var(--ink); background: var(--white); padding: 18px; display: flex; flex-direction: column; gap: 8px; box-shadow: 5px 5px 0 var(--ink); }
+      .svc i { width: 34px; height: 34px; border-radius: 50%; border: var(--line) solid var(--ink); background: var(--c); display: grid; place-items: center; font-style: normal; font-family: var(--mono); font-size: 12px; font-weight: 600; }
+      .svc b { font-weight: 900; font-variation-settings: 'wdth' 76; text-transform: uppercase; font-size: 24px; line-height: 1; }
+      .svc p { margin: 0; font-size: 15px; line-height: 1.45; }
+
+      /* contact */
+      .contact { background: var(--red); border-bottom: var(--line) solid var(--ink); padding-block: 70px 40px; position: relative; overflow: hidden; }
+      .contact::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle, rgb(0 0 0 / .18) 2px, transparent 2.5px) 0 0 / 14px 14px; -webkit-mask: linear-gradient(200deg, #000 10%, transparent 60%); mask: linear-gradient(200deg, #000 10%, transparent 60%); pointer-events: none; }
+      .contact h2 { position: relative; margin: 0 0 30px; font-weight: 900; font-variation-settings: 'wdth' 66; text-transform: uppercase; font-size: clamp(64px, 15vw, 260px); line-height: .82; letter-spacing: -.03em; }
+      .contact-row { position: relative; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+      .contact-row .btn { font-size: 14px; padding: 11px 18px; border-width: var(--line); box-shadow: 4px 4px 0 var(--ink); }
+      .contact-row .btn.big { background: var(--ink); color: var(--white); }
+      footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-block: 18px calc(18px + env(safe-area-inset-bottom, 0px)); font-family: var(--mono); font-size: 12px; }
+
+      /* ---- an opened discipline: its colour floods the page ---- */
+      .room { position: fixed; inset: 0; z-index: 50; background: var(--c); display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); overflow: hidden;
+        clip-path: circle(0px at var(--x, 50%) var(--y, 50%)); visibility: hidden; transition: clip-path .75s var(--ease), visibility 0s .75s; }
+      .room.on { clip-path: circle(var(--rad, 150vmax) at var(--x, 50%) var(--y, 50%)); visibility: visible; transition: clip-path .75s var(--ease), visibility 0s; }
+      .room::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle, rgb(0 0 0 / .14) 2px, transparent 2.5px) 0 0 / 14px 14px; -webkit-mask: linear-gradient(120deg, #000 0%, transparent 55%); mask: linear-gradient(120deg, #000 0%, transparent 55%); }
+      .room-stage { position: relative; margin: 92px 12px 40px 40px; }
+      .room-stage .p-hint { opacity: 1; transform: none; top: -34px; left: 0; right: auto; }
+      .room-body { position: relative; overflow-y: auto; padding: 84px max(28px, env(safe-area-inset-right, 0px)) 40px 28px; display: flex; flex-direction: column; gap: 18px; }
+      .room-top { position: absolute; z-index: 3; top: calc(16px + env(safe-area-inset-top, 0px)); left: 28px; right: max(28px, env(safe-area-inset-right, 0px)); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+      .room-top .btn { box-shadow: 3px 3px 0 var(--ink); }
+      .room-top .p-num { position: static; }
+      .room h3 { margin: 0; font-weight: 900; font-variation-settings: 'wdth' 70; text-transform: uppercase; font-size: clamp(48px, 6.4vw, 112px); line-height: .86; letter-spacing: -.02em; text-wrap: balance; }
+      .room .lede { margin: 0; font-size: 18px; line-height: 1.45; font-weight: 500; max-width: 38ch; }
+      .room .list { border-top: var(--line) solid var(--ink); margin-top: 8px; }
+      .room .row { grid-template-columns: 44px minmax(0, 1fr) 70px 110px; padding: 14px 4px; --c: var(--white); }
+      .room .row .t { font-size: clamp(20px, 2vw, 30px); }
+      .room .stagger > * { opacity: 0; transform: translateY(24px); }
+      .room.ready .stagger > * { opacity: 1; transform: none; transition: opacity .5s, transform .7s var(--ease); transition-delay: calc(var(--i, 0) * 45ms); }
+      .room-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 18px; }
+
+      @media (max-width: 900px) {
+        header.top { grid-template-columns: auto auto; } nav.links { display: none; }
+        .hero-top { grid-template-columns: 1fr; gap: 18px; }
+        .comic { grid-template-columns: 1fr 1fr; grid-template-rows: 1.25fr 1fr; grid-template-areas: "art product" "system motion"; height: auto; min-height: 0; aspect-ratio: 3 / 4; }
+        .about { grid-template-columns: 1fr; gap: 28px; }
+        .row { grid-template-columns: 40px minmax(0, 1fr) auto; } .row .k, .row .y { display: none; }
+        .room { grid-template-columns: 1fr; grid-template-rows: 46dvh minmax(0, 1fr); }
+        .room-stage { margin: 64px 16px 0; }
+        .room-stage .p-hint { display: none; }
+        .room-body { padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+        .room-top { left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); }
+        .room .row { grid-template-columns: 34px minmax(0, 1fr) auto; } .room .row .y { display: none; }
+        .burst { width: 96px; height: 96px; top: -44px; right: -6px; } .burst span { font-size: 13px; }
+      }
+      @media (max-width: 560px) {
+        .wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+        .comic { grid-template-columns: 1fr; grid-template-rows: none; grid-template-areas: "art" "product" "system" "motion"; aspect-ratio: auto; }
+        .panel { height: 72vw; min-height: 300px; } .panel.art { height: 100vw; }
+        .services { grid-template-columns: 1fr; }
+        .say p { white-space: normal; padding-left: 0 !important; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .marquee div, .burst svg, .mark svg { animation: none; }
+        .room, .room.on { transition: none; }
+        .say p { transform: none; opacity: 1; transition: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top wrap">
+      <a class="mark" href="#top" aria-label="Sam, back to the top">
+        <svg viewBox="-50 -50 100 100" aria-hidden="true"><polygon points="0,-48 9,-22 34,-34 22,-9 48,0 22,9 34,34 9,22 0,48 -9,22 -34,34 -22,9 -48,0 -22,-9 -34,-34 -9,-22" fill="#ffd23a" stroke="#111" stroke-width="5" stroke-linejoin="round"/></svg>
+        SAM
+      </a>
+      <nav class="links" aria-label="Sections">
+        <a href="#work">(01) Work</a><a href="#about">(02) About</a><a href="#contact">(03) Contact</a>
+      </nav>
+      <div class="now"><i aria-hidden="true"></i><span id="clock">UTC+8</span></div>
+    </header>
+
+    <main id="top">
+      <section class="hero wrap" aria-label="Introduction">
+        <div class="hero-top">
+          <h1>I design <span class="nw"><a class="hl product" data-k="product" href="#product">interfaces</a>,</span> build <span class="nw"><a class="hl system" data-k="system" href="#system">systems</a>,</span> set things in <span class="nw"><a class="hl motion" data-k="motion" href="#motion">motion</a></span> &amp; make <span class="nw"><a class="hl art" data-k="art" href="#art">art</a>.</span></h1>
+          <div class="hero-side">
+            <span class="label">(Index · 2026)</span>
+            <p>Senior UI/UX designer, making lending products for the Philippine market. Previously at Trip.com. Four disciplines, one curiosity.</p>
+            <span class="label">↓ Hover an object · drag to turn it · click to open</span>
+          </div>
+        </div>
+        <div class="comic" id="comic">
+          <div class="burst" aria-hidden="true">
+            <svg viewBox="-60 -60 120 120"><polygon id="burstShape" fill="#ffd23a" stroke="#111" stroke-width="4" stroke-linejoin="round"/></svg>
+            <span>Four<br />ways of<br />making</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="marquee" aria-hidden="true"><div id="mq1"></div></div>
+
+      <section class="block wrap" id="work" aria-labelledby="work-h">
+        <div class="sec-head">
+          <h2 id="work-h">Selected work</h2>
+          <div class="filters" role="group" aria-label="Show work from">
+            <button class="btn" data-f="all" aria-pressed="true">All</button>
+          </div>
+        </div>
+        <div class="index" id="index"></div>
+      </section>
+
+      <div class="say wrap" id="say" aria-label="Make it work, make it move, make it last.">
+        <p>Make it <mark>work.</mark></p>
+        <p>Make it <mark>move.</mark></p>
+        <p>Make it <mark>last.</mark></p>
+      </div>
+
+      <section class="block wrap" id="about" aria-labelledby="about-h">
+        <div class="sec-head"><h2 id="about-h">About</h2><span class="label">(Four disciplines, one practice)</span></div>
+        <div class="about">
+          <p class="bio">I work where product, system and motion meet, and keep a practice in sculpture and installation beside it. Each of the four starts as an object you can turn.</p>
+          <div class="services" id="services"></div>
+        </div>
+      </section>
+
+      <div class="marquee blue" aria-hidden="true"><div id="mq2"></div></div>
+
+      <section class="contact wrap" id="contact" aria-labelledby="contact-h">
+        <h2 id="contact-h">Say<br />hello.</h2>
+        <div class="contact-row">
+          <button class="btn big" id="email" data-email="">Email · add your address</button>
+          <a class="btn" href="https://github.com/samgestudio-dev" target="_blank" rel="noopener">GitHub ↗</a>
+          <span class="label" id="clock2"></span>
+        </div>
+      </section>
+      <footer class="wrap"><span>© 2026 Sam · Design, code &amp; objects</span><span>Drawn in Hairline lines, printed in pop</span></footer>
+    </main>
+
+    <div class="room" id="room" role="dialog" aria-modal="true" aria-labelledby="room-h" hidden>
+      <div class="room-top">
+        <span class="p-num" id="room-num">01</span>
+        <button class="btn" id="room-close" aria-label="Close and go back">× Back</button>
+      </div>
+      <div class="room-stage" id="room-stage"><span class="p-hint">Drag to turn</span></div>
+      <div class="room-body">
+        <div class="stagger" id="room-text">
+          <span class="label" id="room-kicker"></span>
+          <h3 id="room-h"></h3>
+          <p class="lede" id="room-lede"></p>
+          <div class="list" id="room-list"></div>
+        </div>
+        <div class="room-foot"><button class="btn" id="room-prev"></button><button class="btn" id="room-next"></button></div>
+      </div>
+    </div>
+    <div class="peek" id="peek" aria-hidden="true"><b id="peek-n">01</b><span id="peek-t"></span></div>
+    <script type="module" src="./src/pop/main.js"></script>
+  </body>
+</html>

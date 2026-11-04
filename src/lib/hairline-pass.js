@@ -414,6 +414,11 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
       Object.assign(theme, PALETTES[name]);
       for (const k of ['plate', 'hi', 'edge', 'mid', 'lo']) uniforms['c' + k[0].toUpperCase() + k.slice(1)].value.set(theme[k]);
     },
+    // any five inks of one's own: { plate, hi, edge, mid, lo }
+    setColors(c) {
+      Object.assign(theme, c);
+      for (const k of ['plate', 'hi', 'edge', 'mid', 'lo']) uniforms['c' + k[0].toUpperCase() + k.slice(1)].value.set(theme[k]);
+    },
     // world units per buffer pixel, so the depth plane can be extended across the ring
     setScale(worldPerPx) { uniforms.uWorldPx.value = worldPerPx; },
     // reach: how far, in multiples of the usual few pixels, a fold or a valley is looked
