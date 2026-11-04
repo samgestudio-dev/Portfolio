@@ -94,7 +94,9 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 import { BLUE, BLUE_N } from './bluenoise.js';
 let LIGHT = null, SHADES = null, PITCH = 4, MODE = 'am', DOT_R = 0.36;
 // mode 'solid': the shadowed walls in plain ink; 'am': dots sized by tone, on a 45° screen;
-// 'fm': one size, kept where a blue-noise rank is under the tone
+// 'fm': one size, kept where a blue-noise rank is under the tone; 'tone': a wall turning from
+// the light passes through a screen of dots that grow, then closes into plain ink, so no
+// wall ever turns black all at once (each wall's dots even, as a printed flat tint is)
 export function setLight(L, { pitch = 4, mode = 'am', dotR = 0.36 } = {}) { LIGHT = L; PITCH = pitch; MODE = mode; DOT_R = dotR; SHADES = L ? new Map() : null; }
 export const shadeOf = sil => SHADES?.get(sil) || '';
 const R45 = Math.SQRT1_2;
@@ -127,13 +129,81 @@ function halftone(quads) {
   }
   return d;
 }
+// 'tone': how dark a wall is from how it faces the light — none at TONE_LIT, full at
+// TONE_INK, eased between — and how it is printed: an even screen of dots, then plain ink
+const TONE_LIT = 0.2, TONE_INK = -0.18, TONE_SOLID = 0.9;
+const toneOf = c => { const t = Math.max(0, Math.min(1, (TONE_LIT - c) / (TONE_LIT - TONE_INK))); return t * t * (3 - 2 * t); };
+function tint(quads) {
+  let solid = '', dots = '';
+  for (const q of quads) {
+    if (q.tone < 0.04) continue;
+    if (q.tone >= TONE_SOLID) { solid += poly(q.pg); continue; }
+    // dots whose middles fall in this strip of wall, all one size: the strip's tone
+    const g = q.pg.map(toGrid), r = Math.sqrt(q.tone / TONE_SOLID) * 0.56 * PITCH;
+    const i0 = Math.floor(Math.min(...g.map(p => p[0]))), i1 = Math.ceil(Math.max(...g.map(p => p[0])));
+    const j0 = Math.floor(Math.min(...g.map(p => p[1]))), j1 = Math.ceil(Math.max(...g.map(p => p[1])));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const p = fromGrid(i + 0.5, j + 0.5);
+      if (!inside(p, q.pg)) continue;
+      dots += `M${r2(p[0] - r)} ${r2(p[1])}a${r2(r)} ${r2(r)} 0 1 0 ${r2(2 * r)} 0a${r2(r)} ${r2(r)} 0 1 0 ${r2(-2 * r)} 0`;
+    }
+  }
+  return solid + dots;
+}
+// 'sweep': the line between light and shadow crosses each strip of wall as it turns, a hard
+// edge in plain ink at one slant for every wall on the page (SWEEP_DEG from the horizontal,
+// as a comic's hatching keeps one angle): each strip is inked as far across as its tone,
+// from the side of its darker neighbour, so the shadow comes round a corner and on
+const SWEEP_DEG = 62, SW = [Math.cos(SWEEP_DEG * Math.PI / 180), -Math.sin(SWEEP_DEG * Math.PI / 180)];
+const SN = [-SW[1], SW[0]];                 // across the slanted line
+// the part of polygon pg where n·p ≤ c (Sutherland–Hodgman against one line)
+function clipHalf(pg, n, c) {
+  const out = [], f = p => n[0] * p[0] + n[1] * p[1] - c;
+  for (let i = 0; i < pg.length; i++) {
+    const a = pg[i], b = pg[(i + 1) % pg.length], fa = f(a), fb = f(b);
+    if (fa <= 0) out.push(a);
+    if ((fa < 0) !== (fb < 0) && fa !== fb) { const t = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+  }
+  return out;
+}
+function sweep(quads) {
+  let d = '';
+  quads.forEach((q, k) => {
+    const t = Math.min(1, q.tone / TONE_SOLID);
+    if (t < 0.02) return;
+    if (t >= 0.995) { d += poly(q.pg); return; }
+    const [ta, tb] = q.pg;
+    const before = quads[k - 1]?.tone ?? 0, after = quads[k + 1]?.tone ?? 0;
+    // the axis the edge travels along, pointing from the side it comes in from
+    let n = SN;
+    const ab = (tb[0] - ta[0]) * n[0] + (tb[1] - ta[1]) * n[1];
+    if ((before >= after) !== (ab >= 0)) n = [-n[0], -n[1]];
+    const s = q.pg.map(p => n[0] * p[0] + n[1] * p[1]), s0 = Math.min(...s), s1 = Math.max(...s);
+    const part = clipHalf(q.pg, n, s0 + (s1 - s0) * t);
+    if (part.length > 2) d += poly(part);
+  });
+  return d;
+}
+// a flat face inked as far across as t, from the side turned away from the light (whose
+// direction on the picture runs from o to l), at the page's one slant
+function sweepFrom(pg, t, l, o) {
+  if (t < 0.02 || pg.length < 3) return '';
+  if (t >= 0.995) return poly(pg);
+  let n = SN;
+  if (n[0] * (l[0] - o[0]) + n[1] * (l[1] - o[1]) < 0) n = [-n[0], -n[1]];   // n points to the light
+  const s = pg.map(p => n[0] * p[0] + n[1] * p[1]), s0 = Math.min(...s), s1 = Math.max(...s);
+  const part = clipHalf(pg, n, s0 + (s1 - s0) * t);
+  return part.length > 2 ? poly(part) : '';
+}
 export function prism3(P, T, f, ring, inner, w0, w1) {
   const pr = w => ring.map(q => P(...at(f, q.u, q.v, w)));
   const sil = w0 === w1 ? poly(pr(w0)) : poly(hull(pr(w0).concat(pr(w1))));
   if (LIGHT && w0 !== w1) {
     const nrm = q => [f.U[0] * q.nu + f.V[0] * q.nv, f.U[1] * q.nu + f.V[1] * q.nv, f.U[2] * q.nu + f.V[2] * q.nv];
-    const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < -0.04; };
+    const lim = MODE === 'tone' || MODE === 'sweep' ? TONE_LIT : -0.04;
+    const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < lim; };
     const r = run(ring, dark);
+    let d = '';
     if (r.length > 1) {
       // the cap the viewer sees is the wall's top edge; the other end, its foot
       const capHi = dot(f.W, T) >= 0, wt = capHi ? w1 : w0, wb = capHi ? w0 : w1;
@@ -142,13 +212,24 @@ export function prism3(P, T, f, ring, inner, w0, w1) {
         const a = r[k], b = r[k + 1];
         const ta = P(...at(f, a.u, a.v, wt)), tb = P(...at(f, b.u, b.v, wt)), bb = P(...at(f, b.u, b.v, wb)), ba = P(...at(f, a.u, a.v, wb));
         const n = nrm({ nu: (a.nu + b.nu) / 2, nv: (a.nv + b.nv) / 2 }), l = Math.hypot(...n) || 1;
-        quads.push({ pg: [ta, tb, bb, ba], top: ta, ax: [ba[0] - ta[0], ba[1] - ta[1]], dark: Math.min(1, -dot(n, LIGHT) / l / 0.7) });
+        quads.push({ pg: [ta, tb, bb, ba], top: ta, ax: [ba[0] - ta[0], ba[1] - ta[1]], dark: Math.min(1, -dot(n, LIGHT) / l / 0.7), tone: toneOf(dot(n, LIGHT) / l) });
       }
-      const d = MODE === 'solid'
+      d = MODE === 'solid'
         ? poly(r.map(q => P(...at(f, q.u, q.v, wt))).concat(r.map(q => P(...at(f, q.u, q.v, wb))).reverse()))
-        : halftone(quads);
-      if (d) SHADES.set(sil, d);
+        : MODE === 'tone' ? tint(quads) : MODE === 'sweep' ? sweep(quads) : halftone(quads);
     }
+    // the cap the viewer sees (a drawer's front, a layer's face) is a wall too: inked as it
+    // turns from the light, the edge coming in from the side away from it
+    if (MODE === 'sweep' || MODE === 'tone') {   // (the older prints keep their walls-only shadows)
+      const up = dot(f.W, T) >= 0, cn = up ? f.W : f.W.map(x => -x), w = up ? w1 : w0, c = dot(cn, LIGHT);
+      if (dot(cn, T) > 0.02 && c < lim) {
+        const pg = pr(w), tone = toneOf(c);
+        if (tone >= TONE_SOLID) d += poly(pg);
+        else if (MODE === 'tone') d += tint([{ pg, tone }]);
+        else if (MODE === 'sweep') d += sweepFrom(pg, tone / TONE_SOLID, P(...LIGHT), P(0, 0, 0));
+      }
+    }
+    if (d) SHADES.set(sil, d);
   }
   let crease = '';
   if (inner && w0 !== w1) {

@@ -62,7 +62,7 @@ export const PRINT = { on: false, threshold: 0.62, range: 0.4, dot: 3, mode: 'am
 export function createObject(kind, { onOpen, colors }) {
   const table = createTurntable({ tour: false });
   const o = { kind, table, hover: false, dirty: true, el: null, stage: null, open: false };
-  let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0, pxPerUnit = 1;
+  let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0, pxPerUnit = 1, dotPitch = 1.2;
   let head = null, zoom = 0, vw = 1, vh = 1, bufW = 1, bufH = 1, real = null, headZ = -6, wantHi = null;
   // close up he turns to the pose of the photograph his close-up is after (and drag and the
   // pointer still turn him from there); his line drawing gives way to the real statue
@@ -298,15 +298,24 @@ export function createObject(kind, { onOpen, colors }) {
     // printed: one light from the upper left, in front, fixed to the viewer as a flash is;
     // every wall seen but turned from it is laid in ink, right after its own solid
     const c = Math.cos(C_.az), sn = Math.sin(C_.az), right = [c, -sn, 0];
-    const L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
-    setLight(L, { mode: 'solid' });          // the phone, cabinet and atlas: shadowed walls in plain ink
+    let L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
+    if (kind === 'product') {
+      // the phone's own light: nearly from the viewer, a little to the left, 40° up, so its
+      // screen stays lit as it turns left until it is all but edge-on (about 85°), and only
+      // then do its faces go into shadow
+      const th = norm3([T[0], T[1], 0]), phi = (-12 * Math.PI) / 180, el = (40 * Math.PI) / 180;
+      L = norm3([0, 1, 2].map(i => Math.cos(el) * (Math.cos(phi) * th[i] + Math.sin(phi) * right[i]) + (i === 2 ? Math.sin(el) : 0)));
+    }
+    setLight(L, { mode: 'sweep' });   // the phone, cabinet and atlas: the shadow's edge sweeps across each wall as it turns
     const list = kind === 'product' ? phone(P, T, layers.map(L => Math.max(0, L.x)), lift.map(L => L.x), hot)
       : kind === 'system' ? cabinet(P, T, drawers.map(d => Math.max(0, d.x)), hot)
       : atlas(P, T, CELLS.map((c, n) => ATLAS_REST[n] + AMP * knee(SUM[n])), -1);
     const out = [];
     for (const e of list) {
       out.push(e);
-      if (e[0] === 'sil' || e[0] === 'sil hi' || e[0] === 'sil hot') { const sh = shadeOf(e[1]); if (sh) out.push(['shade', sh, e[2] + '-sh']); }
+      // every solid that was drawn as a prism may have walls in shadow (the drawers' floors and
+      // walls are drawn in a lighter line, but they are walls all the same)
+      if (e[0] !== 'cr' && e[0] !== 'guide') { const sh = shadeOf(e[1]); if (sh) out.push(['shade', sh, e[2] + '-sh']); }
     }
     setLight(null);
     fillKeyed(g, out);
@@ -323,6 +332,8 @@ export function createObject(kind, { onOpen, colors }) {
       const vb = svg.viewBox.baseVal, r = o.stage.getBoundingClientRect();
       const k = Math.min(r.width / vb.width, r.height / vb.height) || 1;     // screen px per drawing unit
       pxPerUnit = k;
+      // the shadows' dot screen: about 5 px a dot as seen opened, so a panel's is as fine for its size
+      dotPitch = 5 / Math.max(0.1, Math.min((innerWidth > 900 ? innerWidth * 0.52 - 52 : innerWidth - 32) / vb.width, (innerWidth > 900 ? innerHeight - 132 : innerHeight * 0.46 - 64) / vb.height));
       // the grain belongs to the drawing, not the screen: tuned on the opened page (about
       // 2.6 px of wobble there) and scaled with the drawing, so a panel's smaller drawing
       // shakes as little, for its size, as the big one does
