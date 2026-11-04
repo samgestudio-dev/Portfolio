@@ -151,20 +151,36 @@ function tint(quads) {
   return solid + dots;
 }
 // 'sweep': the line between light and shadow crosses each strip of wall as it turns, a hard
-// edge in plain ink: each strip is inked as far across as its tone, from the side of the
-// darker neighbour, so the shadow comes round a corner and on across the wall
-const mix2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+// edge in plain ink at one slant for every wall on the page (SWEEP_DEG from the horizontal,
+// as a comic's hatching keeps one angle): each strip is inked as far across as its tone,
+// from the side of its darker neighbour, so the shadow comes round a corner and on
+const SWEEP_DEG = 62, SW = [Math.cos(SWEEP_DEG * Math.PI / 180), -Math.sin(SWEEP_DEG * Math.PI / 180)];
+const SN = [-SW[1], SW[0]];                 // across the slanted line
+// the part of polygon pg where n·p ≤ c (Sutherland–Hodgman against one line)
+function clipHalf(pg, n, c) {
+  const out = [], f = p => n[0] * p[0] + n[1] * p[1] - c;
+  for (let i = 0; i < pg.length; i++) {
+    const a = pg[i], b = pg[(i + 1) % pg.length], fa = f(a), fb = f(b);
+    if (fa <= 0) out.push(a);
+    if ((fa < 0) !== (fb < 0) && fa !== fb) { const t = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+  }
+  return out;
+}
 function sweep(quads) {
   let d = '';
   quads.forEach((q, k) => {
     const t = Math.min(1, q.tone / TONE_SOLID);
     if (t < 0.02) return;
-    const [ta, tb, bb, ba] = q.pg;
     if (t >= 0.995) { d += poly(q.pg); return; }
+    const [ta, tb] = q.pg;
     const before = quads[k - 1]?.tone ?? 0, after = quads[k + 1]?.tone ?? 0;
-    d += before >= after
-      ? poly([ta, mix2(ta, tb, t), mix2(ba, bb, t), ba])          // in from the a side
-      : poly([mix2(tb, ta, t), tb, bb, mix2(bb, ba, t)]);         // in from the b side
+    // the axis the edge travels along, pointing from the side it comes in from
+    let n = SN;
+    const ab = (tb[0] - ta[0]) * n[0] + (tb[1] - ta[1]) * n[1];
+    if ((before >= after) !== (ab >= 0)) n = [-n[0], -n[1]];
+    const s = q.pg.map(p => n[0] * p[0] + n[1] * p[1]), s0 = Math.min(...s), s1 = Math.max(...s);
+    const part = clipHalf(q.pg, n, s0 + (s1 - s0) * t);
+    if (part.length > 2) d += poly(part);
   });
   return d;
 }

@@ -100,6 +100,8 @@ export function drawer(P, T, d, o, frontSeen) {
   }
   held.sort((p, q) => p.depth - q.depth);
 
+  // the box and what it holds, painted bottom up and far to near whichever side is seen:
+  // its floor first, always (the cards stand on it), the cards by depth between its walls
   floor();
   box(walls[0].a, walls[0].c, zb + TW, zt, 0.5, 'lo');
   for (const h of held) for (const [cls, dd] of h.paths) parts.push({ role: 'held', cls, d: dd });
@@ -113,6 +115,7 @@ export function drawer(P, T, d, o, frontSeen) {
   }
 
   // the front, its card holder and its pull
+  const box_ = parts.splice(0);
   const face = rrect(-W / 2 + M, d.z0, W / 2 - M, d.z1, 1.6, 4), faceIn = rrect(-W / 2 + M + 1, d.z0 + 1, W / 2 - M - 1, d.z1 - 1, 1, 4);
   const fr = prism3(P, T, YF(O), face, faceIn, yb, yf);
   parts.push({ role: 'front', cls: 'sil', d: fr.sil }, { role: 'front-cr', cls: 'cr', d: fr.crease });
@@ -132,8 +135,10 @@ export function drawer(P, T, d, o, frontSeen) {
   const kn = prism3(P, T, YF(O), circ(0, d.z0 + 4.2, 1.5, 16), circ(0, d.z0 + 4.2, 1.0, 16), yf, yf + 1.4);
   pull.push(kn);
   for (const q of pull) parts.push({ role: 'pull', cls: 'sil', d: q.sil }, { role: 'pull-cr', cls: 'cr', d: q.crease });
+  // seen from the front, the front is nearest: last; from behind it is farthest: first,
+  // its pull (on its far face then) before it
 
-  return frontSeen ? parts : parts.reverse();
+  return frontSeen ? box_.concat(parts) : parts.filter(p => p.role.startsWith('pull')).concat(parts.filter(p => !p.role.startsWith('pull')), box_);
 }
 
 // the front of drawer d where it stands when out by o: for picking (rule 01)

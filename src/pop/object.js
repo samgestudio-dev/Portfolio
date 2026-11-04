@@ -247,7 +247,9 @@ export function createObject(kind, { onOpen, colors }) {
     const out = [];
     for (const e of list) {
       out.push(e);
-      if (e[0] === 'sil' || e[0] === 'sil hi' || e[0] === 'sil hot') { const sh = shadeOf(e[1]); if (sh) out.push(['shade', sh, e[2] + '-sh']); }
+      // every solid that was drawn as a prism may have walls in shadow (the drawers' floors and
+      // walls are drawn in a lighter line, but they are walls all the same)
+      if (e[0] !== 'cr' && e[0] !== 'guide') { const sh = shadeOf(e[1]); if (sh) out.push(['shade', sh, e[2] + '-sh']); }
     }
     setLight(null);
     fillKeyed(g, out);
