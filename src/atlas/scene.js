@@ -40,6 +40,7 @@ for (let i = 0; i < N; i++) {
   FLOOR.add(best);
 }
 export const AMP = 8;                                  // how far a pluck lifts a pillar, mm
+export const CAP = 1.6;                                // how high kicks can stack, in plucks
 
 // a value's place along a scale of values (fractional index), for the critical line
 const along = (vals, v) => {
@@ -51,17 +52,17 @@ const along = (vals, v) => {
 const ZF = o => ({ o, U: [1, 0, 0], V: [0, 1, 0], W: [0, 0, 1] });
 const O = [0, 0, 0];
 
-/* Everything with the pillars at heights hs, as [class, d] in paint order. hot: −1 or a cell. */
+/* Everything with the pillars at heights hs, as [class, d, name] in paint order. hot: −1 or a cell. */
 export function atlas(P, T, hs, hot) {
   const out = [];
   // the plinth, its rim, and the bed sunk inside it
   const half = EXT / 2 + M;
   const [pr, pi] = rings(-half, -half, half, half, 10, 2.2, 6);
   const pl = prism3(P, T, ZF(O), pr, pi, 0, PB);
-  out.push(['sil', pl.sil], ['cr', pl.crease]);
+  out.push(['sil', pl.sil, 'plinth'], ['cr', pl.crease, 'plinth-cr']);
   const bed = rrect(-EXT / 2 - 2, -EXT / 2 - 2, EXT / 2 + 2, EXT / 2 + 2, 4.5, 6);
-  out.push(['bed', poly(bed.map(q => P(q.u, q.v, ZB)))]);
-  out.push(['cr', poly(bed.map(q => P(q.u, q.v, PB)))]);
+  out.push(['bed', poly(bed.map(q => P(q.u, q.v, ZB))), 'bed']);
+  out.push(['cr', poly(bed.map(q => P(q.u, q.v, PB))), 'rim']);
   // graduated marks round the rim: dots that grow with k along the two edges across, ticks
   // that lengthen with c along the two edges back
   const rim = EXT / 2 + M / 2 + 0.5;
@@ -72,7 +73,7 @@ export function atlas(P, T, hs, hot) {
     const y = Y0 + (n + 0.5) * CELL, L = 0.8 + n * 0.32;
     for (const sx of [-1, 1]) ticks += `M${P(sx * (rim - L / 2), y, PB).join(' ')}L${P(sx * (rim + L / 2), y, PB).join(' ')}`;
   }
-  out.push(['dot', dots], ['mk', ticks]);
+  out.push(['dot', dots, 'k-marks'], ['mk', ticks, 'c-marks']);
   // critical damping, c = 2√k, traced on the bed: the floor of the valley
   const line = [];
   for (let n = 0; n <= 60; n++) {
@@ -81,7 +82,7 @@ export function atlas(P, T, hs, hot) {
     if (fj < -0.5 || fj > N - 0.5) continue;
     line.push(P(X0 + (fi + 0.5) * CELL, Y0 + (fj + 0.5) * CELL, ZB));
   }
-  out.push(['guide', open(line)]);
+  out.push(['guide', open(line), 'critical']);
 
   // the pillars, far to near; the chosen one carries a 3 × 3 mark of dots on its lid
   const order = CELLS.map((c, n) => ({ c, n, key: T[0] * c.cx + T[1] * c.cy })).sort((a, b) => a.key - b.key);
@@ -89,12 +90,12 @@ export function atlas(P, T, hs, hot) {
     const h = Math.max(0.8, hs[n]), x0 = c.cx - FOOT / 2, y0 = c.cy - FOOT / 2;
     const [ring, inner] = rings(x0, y0, x0 + FOOT, y0 + FOOT, 2.2, 0.8, 4);
     const p = prism3(P, T, ZF(O), ring, inner, ZB, PB + h);
-    out.push([n === hot ? 'sil hi' : 'sil', p.sil], ['cr', p.crease]);
-    if (FLOOR.has(n) && n !== hot) out.push(['dot', poly(circ(c.cx, c.cy, 0.6, 12).map(q => P(q.u, q.v, PB + h)))]);
+    out.push([n === hot ? 'sil hi' : 'sil', p.sil, `p${n}`], ['cr', p.crease, `p${n}-cr`]);
+    if (FLOOR.has(n) && n !== hot) out.push(['dot', poly(circ(c.cx, c.cy, 0.6, 12).map(q => P(q.u, q.v, PB + h))), `p${n}-floor`]);
     if (n === hot) {
       let m = '';
       for (let a = 0; a < 9; a++) m += poly(circ(c.cx + ((a % 3) - 1) * 1.7, c.cy + (Math.floor(a / 3) - 1) * 1.7, a === 4 ? 0.6 : 0.42, 10).map(q => P(q.u, q.v, PB + h)));
-      out.push(['dot hi-dot', m]);
+      out.push(['dot hi-dot', m, `p${n}-mark`]);
     }
   }
   return out;
@@ -107,5 +108,5 @@ export function restHull(P, n) {
   return hull(pts);
 }
 export const PITCH = CELL;
-export const EXTENT = { r: Math.hypot(EXT / 2 + M, EXT / 2 + M), top: PB + 18 + AMP + 2 };
+export const EXTENT = { r: Math.hypot(EXT / 2 + M, EXT / 2 + M), top: PB + 18 + AMP * CAP + 2 };
 export const restHeights = () => CELLS.map(c => c.h0);

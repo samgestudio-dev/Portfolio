@@ -1,7 +1,8 @@
 import { createTurntable, bindWheel } from '../lib/turntable.js';
 import { Cam, proj, toward, prism3, hull, inside, circ } from '../lib/iso.js';
 import { buildPlatter, PLATTER_R } from '../lib/platter-svg.js';
-import { atlas, restHeights, restHull, CELLS, EXTENT, AMP, PB, KS, CS } from './scene.js';
+import { fillKeyed } from '../lib/keyed-fill.js';
+import { atlas, restHeights, restHull, CELLS, EXTENT, AMP, CAP, PB, KS, CS } from './scene.js';
 
 /* Motion · 02 — a spring atlas on the turntable, after Hairline's Terrain.
 
@@ -12,9 +13,10 @@ import { atlas, restHeights, restHull, CELLS, EXTENT, AMP, PB, KS, CS } from './
 
    Hover    the pillar under the pointer is lifted a little and let go; it takes the
             bright edge and the read-out gives its k · c · ζ · settle.
-   Tap      lifts the whole field, in a wave out from where you tapped (rule 02:
-            stagger by distance); each region rings at its own rate and dies its own
-            way. Space or Pluck all do the same, out from the middle.
+   Tap      sends a ring out across the field from where you tapped (rule 02: stagger
+            by distance), kicking each spring as it passes; each region rings at its own
+            rate and dies its own way. Tap again and again and the rings follow one
+            another out, crossing and stacking. Space or Pluck all, out from the middle.
    Drag     spins the turntable; a trackpad swipe too. ← → a quarter turn.          */
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -55,48 +57,61 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const table = createTurntable({ tour: false });
 const NC = CELLS.length, REST = restHeights();
 const X = new Float64Array(NC), V = new Float64Array(NC);
-const WAIT = new Float64Array(NC).fill(-1);            // seconds until this spring is lifted; −1 none pending
 const LIFT = new Float64Array(NC).fill(-1);            // seconds into its lift; −1 free
 const FROM = new Float64Array(NC), TO = new Float64Array(NC);
-const LIFT_S = 0.14;                                   // the lift itself: quick, then let go
+const LIFT_S = 0.14;                        // the lift itself: quick, then let go; how high kicks can stack
 const ease = t => 1 - Math.pow(1 - t, 3);
 let awake = 0;                                         // springs not yet still: the loop sleeps at 0 (rule 07)
 
-function pluck(n, amount, delay = 0) {
+// a kick: lift this spring by `amount` from wherever it is now, then let it go. Kicks add,
+// so a spring caught mid-swing by a second wave is thrown again, not reset.
+function kick(n, amount) {
   if (reduced) return;
-  WAIT[n] = delay; TO[n] = amount;
+  FROM[n] = X[n]; TO[n] = Math.min(CAP, X[n] + amount); LIFT[n] = 0; V[n] = 0;
 }
-// the whole field, in a wave out from a point on it, a few milliseconds a millimetre
-function pluckAll(cx = 0, cy = 0) {
-  CELLS.forEach((c, n) => pluck(n, 1, Math.hypot(c.cx - cx, c.cy - cy) * 0.006));
+const pluck = kick;
+// Waves: each tap sends its own ring out across the field, at a steady speed (rule 02:
+// stagger by distance). A spring is kicked as a ring passes it; rings cross and stack.
+const SPEED = 150;                                     // mm a second
+const waves = [];
+const REACH = Math.hypot(EXTENT.r, EXTENT.r);
+function pluckAll(cx = 0, cy = 0, amount = 1) {
+  if (reduced) return;
+  waves.push({ cx, cy, r: -1e-6, amount });
+}
+function stepWaves(dt) {
+  for (let w = waves.length - 1; w >= 0; w--) {
+    const wv = waves[w], r0 = wv.r, r1 = r0 + SPEED * dt;
+    CELLS.forEach((c, n) => { const d = Math.hypot(c.cx - wv.cx, c.cy - wv.cy); if (d > r0 && d <= r1) kick(n, wv.amount); });
+    wv.r = r1;
+    if (r1 > REACH) waves.splice(w, 1);
+  }
 }
 function stepSprings(dt) {
-  awake = 0;
+  stepWaves(dt);
+  awake = waves.length ? 1 : 0;
+  let live = 0;
   const sub = Math.max(1, Math.ceil(dt * 480)), h = dt / sub;
   for (let n = 0; n < NC; n++) {
-    let live = false;
-    if (WAIT[n] >= 0) {
-      WAIT[n] -= dt; live = true;
-      if (WAIT[n] < 0) { WAIT[n] = -1; LIFT[n] = 0; FROM[n] = X[n]; }
-    }
     if (LIFT[n] >= 0) {
       LIFT[n] += dt;
       const t = Math.min(1, LIFT[n] / LIFT_S);
       X[n] = FROM[n] + (TO[n] - FROM[n]) * ease(t); V[n] = 0;
       if (t >= 1) LIFT[n] = -1;
-      awake++;
+      live++;
       continue;
     }
-    if (X[n] !== 0 || V[n] !== 0) {
-      const { k, c } = CELLS[n];
-      let x = X[n], v = V[n];
-      for (let s = 0; s < sub; s++) { v += (-k * x - c * v) * h; x += v * h; }
-      if (Math.abs(x) < 0.002 && Math.abs(v) < 0.02) { x = 0; v = 0; } else live = true;
-      X[n] = x; V[n] = v;
-    }
-    if (live) awake++;
+    if (X[n] === 0 && V[n] === 0) continue;
+    const { k, c } = CELLS[n];
+    let x = X[n], v = V[n];
+    for (let s = 0; s < sub; s++) { v += (-k * x - c * v) * h; x += v * h; }
+    if (Math.abs(x) < 0.002 && Math.abs(v) < 0.02) { x = 0; v = 0; } else live++;
+    X[n] = x; V[n] = v;
   }
+  ringing = live;
+  awake = Math.max(awake, live);
 }
+let ringing = 0;
 const heights = () => CELLS.map((c, n) => REST[n] + AMP * X[n]);
 
 /* ---- pointer: tested against the pillars at rest (rule 01) -------------------- */
@@ -226,7 +241,7 @@ function frame(now) {
   if (touchHotUntil && clock > touchHotUntil) { touchHotUntil = 0; hot = -1; }
   const s = table.state(), c = CELLS[hot];
   const part = c ? `k ${c.k} · c ${c.c} · ζ ${c.zeta.toFixed(2)} · settle ${c.settle.toFixed(2)} s`
-    : awake ? `ringing <b>${String(awake).padStart(2, '0')}</b>/${NC}` : 'rest';
+    : awake ? `ringing <b>${String(ringing).padStart(2, '0')}</b>/${NC}` : 'rest';
   const text = `θ ${String(Math.round(s.degrees)).padStart(3, '0')}° · face <b>${s.face}</b>/4 · ${part}`;
   if (text !== lastText) { readout.innerHTML = text; lastText = text; }
   const key = awake ? `${clock}` : `${table.theta.toFixed(5)}|${hot}|${look}`;
@@ -239,7 +254,7 @@ function frame(now) {
     const back = [], front = [];
     for (const p of base.slice(2)) { const d = prism3(P, T, p.frame, p.ring, p.inner, p.w0, p.w1); (k(p.frame.o[0], p.frame.o[1]) < 0 ? back : front).push(['sil', d.sil], ['cr', d.crease]); }
     fill(backG, back); fill(frontG, front);
-    fill(fieldG, atlas(P, T, heights(), hot));
+    fillKeyed(fieldG, atlas(P, T, heights(), hot));
     lastKey = key;
   }
   requestAnimationFrame(frame);

@@ -1,6 +1,7 @@
 import { createTurntable, bindWheel } from '../lib/turntable.js';
 import { Cam, proj, toward, prism3, hull, inside, circ, clamp } from '../lib/iso.js';
 import { buildPlatter, PLATTER_R } from '../lib/platter-svg.js';
+import { fillKeyed } from '../lib/keyed-fill.js';
 import { book, pose, REST_F, N, EXTENT } from './scene.js';
 
 /* Motion · 01 — a flipbook held up over the turntable, fanned.
@@ -203,7 +204,7 @@ function frame(now) {
     const back = [], front = [];
     for (const p of base.slice(2)) { const d = prism3(P, T, p.frame, p.ring, p.inner, p.w0, p.w1); (k(p.frame.o[0], p.frame.o[1]) < 0 ? back : front).push(['sil', d.sil], ['cr', d.crease]); }
     fill(backG, back); fill(frontG, front);
-    fill(bookG, book(P, T, pose(f), lit));
+    fillKeyed(bookG, book(P, T, pose(f), lit));
     lastKey = key;
   }
   requestAnimationFrame(frame);

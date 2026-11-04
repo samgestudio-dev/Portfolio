@@ -47,7 +47,7 @@ export const REST = pose(REST_F);
 const ZF = o => ({ o, U: [1, 0, 0], V: [0, 1, 0], W: [0, 0, 1] });
 
 /* Everything, with page i at angle angles[i] about the spine (degrees; 0 points along +x,
-   + turns toward +y), as [class, d] in paint order. hot: −1 or a page. */
+   + turns toward +y), as [class, d, name] in paint order. hot: −1 or a page. */
 export function book(P, T, angles, hot) {
   const out = [];
   const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -61,13 +61,13 @@ export function book(P, T, angles, hot) {
     const r = ((a + TURN) * Math.PI) / 180, nrm = [-Math.sin(r), Math.cos(r), 0];
     const facing = dot3(nrm, T) > 0;
     const paths = [
-      ['lo', poly(outline.map(q => P(...at(a, q.v, q.u, TK))))],
-      [i === hot ? 'sil hi' : 'sil', poly(outline.map(q => P(...at(a, q.v, q.u))))],
+      ['lo', poly(outline.map(q => P(...at(a, q.v, q.u, TK)))), `pg${i}-back`],
+      [i === hot ? 'sil hi' : 'sil', poly(outline.map(q => P(...at(a, q.v, q.u)))), `pg${i}`],
     ];
     if (facing) {
       const b = ball(i);
-      paths.push(['cr', `M${P(...at(a, 7, 7)).join(' ')}L${P(...at(a, 7, WS - 6)).join(' ')}`]);
-      paths.push(['ball', poly(circ(0, 0, 1, 20).map(q => P(...at(a, b.s + q.v * b.rs, b.w + q.u * b.rw))))]);
+      paths.push(['cr', `M${P(...at(a, 7, 7)).join(' ')}L${P(...at(a, 7, WS - 6)).join(' ')}`, `pg${i}-ground`]);
+      paths.push(['ball', poly(circ(0, 0, 1, 20).map(q => P(...at(a, b.s + q.v * b.rs, b.w + q.u * b.rw)))), `pg${i}-ball`]);
     }
     return { k: dot3(T, at(a, HS / 2, WS / 2)), paths };
   });
@@ -75,10 +75,10 @@ export function book(P, T, angles, hot) {
   const [sr, si] = rings(-3.4, -3.4, 3.4, 3.4, 3.4, 0.8, 6);
   const sp = prism3(P, T, ZF([0, 0, 0]), sr, si, ZB - 2, ZB + HS + 2);
   const caps = [ZB - 4, ZB + HS + 2].map(z0 => prism3(P, T, ZF([0, 0, 0]), circ(0, 0, 4.4, 20), circ(0, 0, 3.4, 20), z0, z0 + 2));
-  items.push({ k: dot3(T, [0, 0, ZB + HS / 2]), paths: [['sil', caps[0].sil], ['cr', caps[0].crease], ['sil', sp.sil], ['cr', sp.crease], ['sil', caps[1].sil], ['cr', caps[1].crease]] });
+  items.push({ k: dot3(T, [0, 0, ZB + HS / 2]), paths: [['sil', caps[0].sil, 'cap0'], ['cr', caps[0].crease, 'cap0-cr'], ['sil', sp.sil, 'spine'], ['cr', sp.crease, 'spine-cr'], ['sil', caps[1].sil, 'cap1'], ['cr', caps[1].crease, 'cap1-cr']] });
   items.sort((p, q) => p.k - q.k);
   // a dotted drop from the spine's foot to the platter: the book floats
-  out.push(['guide', `M${P(0, 0, ZB - 4).join(' ')}L${P(0, 0, 0).join(' ')}`]);
+  out.push(['guide', `M${P(0, 0, ZB - 4).join(' ')}L${P(0, 0, 0).join(' ')}`, 'drop']);
   for (const it of items) out.push(...it.paths);
   return out;
 }
