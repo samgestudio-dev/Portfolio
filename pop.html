@@ -42,8 +42,25 @@
         overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior: contain; cursor: grab; }
       .strip::-webkit-scrollbar { display: none; }
       .strip.panning { cursor: grabbing; scroll-snap-type: none; }
+      .strip.gliding { scroll-snap-type: none; }
+      /* moving between opened frames: the camera pulls back a little while it glides */
+      .strip { transition: transform calc(420ms * var(--slowk, 1)) var(--ease); }
+      .strip.pulled { transform: scale(.9); }
       .frame { position: relative; flex: 0 0 min(86vw, 1360px); height: 100%; scroll-snap-align: center; scroll-snap-stop: always; border-radius: 6px; background: var(--c, var(--paper)); overflow: hidden; isolation: isolate; }
       .frame.intro, .frame.outro { flex-basis: min(92vw, 1500px); }
+      /* each frame knows where it stands (--p: -1 left … 0 centre … 1 right, --a = |p|):
+         off the centre it falls back and dims, its object lags and its caption leads */
+      .frame::after { content: ""; position: absolute; inset: 0; z-index: 6; pointer-events: none; background: var(--ink); opacity: calc(var(--a, 0) * .42); border-radius: inherit; }
+      @media (min-width: 861px) {
+        .frame { transform: scale(calc(1 - var(--a, 0) * .055)) rotate(calc(var(--p, 0) * .5deg)); border-radius: calc(6px + var(--a, 0) * 14px); will-change: transform; }
+        .p-stage { translate: calc(var(--p, 0) * -16%) calc(var(--a, 0) * 3%); }
+        .cap { translate: calc(var(--p, 0) * 30%) 0; }
+        .f-num { translate: calc(var(--p, 0) * 40px) 0; }
+        .frame.colour::before { background-position: calc(var(--p, 0) * 90px) calc(var(--a, 0) * 30px); }
+        .intro h1 { translate: calc(var(--p, 0) * 10%) 0; }
+        .intro-foot, .outro .side { translate: calc(var(--p, 0) * 18%) 0; }
+        .outro h2 { translate: calc(var(--p, 0) * 8%) 0; }
+      }
       .frame.art { --c: var(--red); } .frame.product { --c: var(--blue); } .frame.system { --c: var(--yellow); } .frame.motion { --c: var(--pink); }
       .frame.outro { --c: #1b1b19; color: var(--paper); }
       /* Ben-Day dots in one corner of a coloured frame, and nowhere else */
@@ -74,11 +91,18 @@
       .f-hint { position: absolute; z-index: 3; top: 24px; left: 74px; font-family: var(--mono); font-size: 11px; color: var(--ink); background: color-mix(in srgb, var(--white) 85%, transparent); border-radius: 999px; padding: 5px 10px; opacity: 0; transform: translateY(-4px); transition: opacity var(--fast), transform var(--mid) var(--ease); pointer-events: none; }
       .frame.colour:hover .f-hint, .frame.colour.live .f-hint { opacity: 1; transform: none; }
       .p-stage { position: absolute; inset: 9% 6% 14% 32%; z-index: 1; }
-      .cap { position: absolute; z-index: 3; left: clamp(24px, 4vw, 56px); bottom: clamp(24px, 5vh, 56px); display: flex; flex-direction: column; align-items: flex-start; gap: 12px; max-width: min(46%, 560px);
-        transform: translateY(14px); opacity: 0; transition: transform var(--slow) var(--ease), opacity var(--mid); }
-      .frame.live .cap { transform: none; opacity: 1; }
+      .cap { position: absolute; z-index: 3; left: clamp(24px, 4vw, 56px); bottom: clamp(24px, 5vh, 56px); display: flex; flex-direction: column; align-items: flex-start; gap: 12px; max-width: min(46%, 560px); }
+      /* each box comes in on its own, the name first, slapped on a little crooked and set straight */
+      .cap > * { transform: translateY(22px) rotate(-2.5deg); opacity: 0; transition: transform 640ms cubic-bezier(.34, 1.4, .5, 1), opacity 260ms linear; }
+      .cap > :nth-child(2) { transform: translateY(18px) rotate(1.5deg); transition-delay: 90ms; }
+      .cap > :nth-child(3) { transform: translateY(12px); transition-delay: 180ms; }
+      .frame.live .cap > * { transform: none; opacity: 1; }
+      .frame:not(.live) .cap > * { transition-delay: 0ms; transition-duration: 260ms, 180ms; }
+      /* opened: the room draws them, so the frame keeps only their places */
+      .frame.away .cap .big, .frame.away .cap .sub, .frame.away .f-num { visibility: hidden; }
+      .frame.away .cap .open, .frame.away .f-hint { opacity: 0; transition: none; }
       .cap .box.big { font-size: clamp(40px, 6vw, 112px); padding: .08em .14em .1em; }
-      .cap .box.sub { font-size: 15px; padding: 8px 14px; transition-delay: 90ms; color: var(--ink-2); }
+      .cap .box.sub { font-size: 15px; padding: 8px 14px; color: var(--ink-2); }
       .cap .box.sub b { color: var(--ink); font-weight: 600; }
       .cap .open { margin-top: 4px; font-family: var(--mono); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 8px; color: var(--ink); opacity: .85; background: color-mix(in srgb, var(--white) 70%, transparent); padding: 5px 10px; border-radius: 999px; transition: opacity var(--fast), transform var(--mid) var(--ease); }
       .frame.colour:hover .cap .open { opacity: 1; transform: translateX(4px); }
@@ -90,6 +114,10 @@
       .obj-svg .shade { fill: var(--ink); stroke: none; }
       .obj-svg path { fill: var(--white); stroke: var(--ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
       .obj-svg .cr { fill: none; stroke-width: 1; }
+      .obj-svg path { transition: fill 220ms linear, stroke-width 220ms var(--ease); }
+      .obj-svg .sil.hot { stroke-width: 2.8; fill: var(--tint); }
+      .obj-svg .sil.ui.hot, .obj-svg .mk.hot { stroke-width: 1.8; }
+      .obj-svg .fill.hot { stroke-width: 1.8; }
       .obj-svg .sil.ui { stroke-width: 1.1; }
       .obj-svg .fill { fill: var(--tint, var(--yellow)); stroke: var(--ink); stroke-width: 1; }
       .obj-svg .mk, .obj-svg .nf { fill: none; stroke-width: 1; }
@@ -124,21 +152,32 @@
       .film button { width: 30px; height: 20px; border: 1.5px solid var(--ink); background: var(--c, var(--paper)); border-radius: 2px; cursor: pointer; padding: 0; opacity: .55; transition: opacity var(--fast), transform var(--mid) var(--ease); }
       .film button:hover { opacity: 1; } .film button:active { transform: scale(.94); }
       .film button[aria-current="true"] { opacity: 1; transform: translateY(-3px); }
+      .film { position: fixed; }
+      .film-ind { position: absolute; left: 0; top: 6px; pointer-events: none; border-radius: 3px; box-shadow: 0 0 0 2.5px var(--white), 0 0 0 5px var(--ink); translate: 0 -3px; }
+      .reel-w { display: inline-block; height: 1.25em; line-height: 1.25em; overflow: hidden; vertical-align: bottom; }
+      .reel { display: flex; flex-direction: column; transform: translateY(calc(var(--i, 0) * -1.25em)); transition: transform var(--mid) cubic-bezier(.34, 1.3, .5, 1); }
+      .reel span { display: block; height: 1.25em; }
+      .counter { line-height: 1.25em; }
 
       /* ---- a frame, opened: it grows to the page ---- */
-      .room { position: fixed; inset: 0; z-index: 50; background: var(--c); color: var(--ink); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .95fr); overflow: hidden;
-        clip-path: inset(var(--t, 40%) var(--r, 40%) var(--b, 40%) var(--l, 40%) round 6px); visibility: hidden; transition: clip-path var(--slow) var(--ease), visibility 0s var(--slow); }
-      .room.on { clip-path: inset(0 0 0 0 round 0); visibility: visible; transition: clip-path var(--slow) var(--ease), visibility 0s; }
+      .room { position: fixed; inset: 0; z-index: 50; background: var(--c); color: var(--ink); display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1fr); overflow: hidden;
+        clip-path: inset(var(--t, 40%) var(--r, 40%) var(--b, 40%) var(--l, 40%) round 6px); visibility: hidden; transition: clip-path var(--rd, 760ms) var(--ease), visibility 0s var(--rd, 760ms); }
+      .room.on { clip-path: inset(0 0 0 0 round 0); visibility: visible; transition: clip-path var(--rd, 760ms) var(--ease), visibility 0s; }
+      /* the room's shared things travel from the frame: scaled from their top-left corner */
+      #room-h, #room-lede, #room-num, .ghost, .obj-svg, .obj-canvas { transform-origin: 0 0; }
+      .ghost { position: absolute; z-index: 4; margin: 0; pointer-events: none; }
+      .ghost.sub { font-size: 15px; padding: 8px 14px; color: var(--ink-2); } .ghost.sub b { color: var(--ink); font-weight: 600; }
       .room.art { --c: var(--red); } .room.product { --c: var(--blue); } .room.system { --c: var(--yellow); } .room.motion { --c: var(--pink); }
-      .room::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle, rgb(20 20 18 / .18) 1.6px, transparent 2px) 0 0 / 11px 11px; -webkit-mask: radial-gradient(70% 90% at 0% 100%, #000 0%, transparent 60%); mask: radial-gradient(70% 90% at 0% 100%, #000 0%, transparent 60%); }
+      .room::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle, rgb(20 20 18 / .2) 1.6px, transparent 2px) 0 0 / 11px 11px; -webkit-mask: radial-gradient(90% 90% at 100% 100%, #000 0%, transparent 62%); mask: radial-gradient(90% 90% at 100% 100%, #000 0%, transparent 62%); }
       .room-top { position: absolute; z-index: 3; top: calc(30px + env(safe-area-inset-top, 0px)); left: max(32px, env(safe-area-inset-left, 0px)); right: max(32px, env(safe-area-inset-right, 0px)); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
       .btn { font: inherit; font-size: 14px; font-weight: 500; color: var(--ink); background: var(--white); border: var(--line) solid var(--ink); box-shadow: 4px 4px 0 var(--ink); padding: 8px 14px; cursor: pointer; min-height: 40px; display: inline-flex; align-items: center; gap: 10px; transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease); }
       .btn:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink); }
       .btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
       .btn kbd { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
-      .room-stage { position: relative; margin: 110px 20px 70px max(40px, env(safe-area-inset-left, 0px)); }
-      .room-stage .f-hint { opacity: 1; transform: none; top: -40px; left: 0; right: auto; }
-      .room-body { position: relative; overflow-y: auto; padding: 118px max(40px, env(safe-area-inset-right, 0px)) 40px 24px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+      .room-stage { position: relative; grid-column: 2; grid-row: 1; margin: 110px max(40px, env(safe-area-inset-right, 0px)) 100px 20px; }
+      .room-stage .f-hint { top: -40px; left: 0; right: auto; }
+      .room.ready .room-stage .f-hint { opacity: 1; }
+      .room-body { position: relative; grid-column: 1; grid-row: 1; overflow-y: auto; padding: 118px 24px 110px max(40px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
       .room-body .box.big { font-size: clamp(36px, 4.6vw, 80px); padding: .08em .14em .1em; }
       .room-body .lede { font-size: 17px; line-height: 1.5; max-width: 42ch; padding: 12px 16px; }
       .room-body .lede b { font-weight: 600; }
@@ -151,12 +190,25 @@
       .row .n { font-family: var(--mono); font-size: 12px; color: var(--ink-3); } .row .t { font-weight: 600; font-size: 17px; } .row .k { font-size: 13px; color: var(--ink-2); }
       .row .go { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
       .row.link .go { color: var(--ink); }
-      .room .stagger { opacity: 0; transform: translateY(14px); }
+      /* what belongs to the room alone comes in after the frame has grown, and leaves first */
+      .room .stagger { opacity: 0; transform: translateY(10px); transition: opacity 140ms linear, transform 220ms var(--ease); }
       .room.ready .stagger { opacity: 1; transform: none; transition: opacity var(--mid), transform var(--slow) var(--ease); transition-delay: calc(var(--i, 0) * 70ms); }
-      .room-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 32px; width: 100%; }
-      .room-foot a { font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; padding: 10px 0; min-height: 44px; }
-      .room-foot a span { transition: transform var(--mid) var(--ease); display: inline-block; }
-      .room-foot a:hover .l { transform: translateX(-4px); } .room-foot a:hover .r { transform: translateX(4px); }
+      .room .step.stagger { transform: translateX(var(--from, 0)); }
+      .room.ready .step.stagger { transform: none; }
+      .room.ready .step.stagger:hover { transform: translate(-1px, -1px); }
+      .room.ready .step.stagger:active { transform: translate(2px, 2px); transition-delay: 0ms; }
+      /* the way on to the next frame, at the page's two edges: each wears the colour of where it goes */
+      .step { position: absolute; z-index: 3; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); gap: 12px; padding: 8px 14px 8px 12px; }
+      .step.prev { left: max(32px, env(safe-area-inset-left, 0px)); --from: -10px; }
+      .step.next { right: max(32px, env(safe-area-inset-right, 0px)); --from: 10px; padding: 8px 12px 8px 14px; }
+      .step::before { content: ""; width: 12px; height: 12px; border: 1.5px solid var(--ink); background: var(--c); border-radius: 2px; order: 1; }
+      .step.prev::before { order: 0; margin-right: -2px; }
+      .step.next::before { order: 2; margin-left: -2px; }
+      .step small { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-right: 4px; }
+      .step > span { display: inline-block; transition: transform var(--mid) var(--ease); }
+      .step.prev > span:last-child, .step.next > span:first-child { order: 1; }
+      .step.next > span.r { order: 3; }
+      .step:hover .l { transform: translateX(-4px); } .step:hover .r { transform: translateX(4px); }
 
       @media (max-width: 860px) {
         .strip { flex-direction: column; overflow-x: hidden; overflow-y: auto; scroll-snap-type: y mandatory; padding-top: max(var(--gap), env(safe-area-inset-top, 0px)); padding-bottom: max(var(--gap), env(safe-area-inset-bottom, 0px)); }
@@ -169,8 +221,10 @@
         .top { top: calc(var(--gap) + 12px + env(safe-area-inset-top, 0px)); left: calc(var(--gap) + 12px); right: calc(var(--gap) + 12px); }
         .film { bottom: calc(var(--gap) + 10px + env(safe-area-inset-bottom, 0px)); } .film button { width: 22px; height: 16px; }
         .room { grid-template-columns: 1fr; grid-template-rows: 42dvh minmax(0, 1fr); }
-        .room-stage { margin: 72px 16px 8px; } .room-stage .f-hint { display: none; }
-        .room-body { padding: 16px 20px calc(24px + env(safe-area-inset-bottom, 0px)); }
+        .room-stage { grid-column: 1; grid-row: 1; margin: 72px 16px 8px; } .room-stage .f-hint { display: none; }
+        .room-body { grid-column: 1; grid-row: 2; padding: 16px 20px calc(88px + env(safe-area-inset-bottom, 0px)); }
+        .step { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
+        .step.prev { left: 16px; } .step.next { right: 16px; }
         .room-top { top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px; right: 16px; }
         .room-body .box.big { font-size: 38px; }
       }
@@ -179,6 +233,8 @@
         .room, .room.on { transition: none; }
         .cap, .frame.live .cap { transition: none; opacity: 1; transform: none; }
         .room .stagger { opacity: 1; transform: none; }
+        .frame, .p-stage, .cap, .f-num { transform: none !important; translate: none !important; }
+        .cap > * { opacity: 1; transform: none; transition: none; }
       }
     </style>
   </head>
@@ -209,7 +265,7 @@
 
     <div class="top">
       <a class="box mark" href="#" id="home" aria-label="Sam, back to the first frame">Sam</a>
-      <span class="box counter" id="counter">01 / 06</span>
+      <span class="box counter" id="counter" aria-live="off"><span class="reel-w"><span class="reel" id="reel">01</span></span><span class="of"> / 06</span></span>
     </div>
     <nav class="film" id="film" aria-label="Frames"></nav>
 
@@ -218,13 +274,14 @@
         <span class="f-num" id="room-num" style="position: static">01 · Art</span>
         <button class="btn" id="room-close" aria-label="Close and go back">Back <kbd>esc</kbd></button>
       </div>
-      <div class="room-stage" id="room-stage"><span class="f-hint">Drag to turn</span></div>
       <div class="room-body">
-        <span class="box big stagger" id="room-h" style="--i:0"></span>
-        <p class="box lede stagger" id="room-lede" style="--i:1"></p>
-        <div class="list stagger" id="room-list" style="--i:2"></div>
-        <div class="room-foot stagger" style="--i:3"><a href="#" id="room-prev"></a><a href="#" id="room-next"></a></div>
+        <span class="box big" id="room-h"></span>
+        <p class="box lede" id="room-lede"></p>
+        <div class="list stagger" id="room-list" style="--i:0"></div>
       </div>
+      <div class="room-stage" id="room-stage"><span class="f-hint stagger" style="--i:1">Drag to turn</span></div>
+      <a href="#" class="btn step prev stagger" id="room-prev" style="--i:2"></a>
+      <a href="#" class="btn step next stagger" id="room-next" style="--i:2"></a>
     </div>
     <script type="module" src="./src/pop/main.js"></script>
   </body>

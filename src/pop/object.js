@@ -1,11 +1,11 @@
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { createTurntable } from '../lib/turntable.js';
-import { createHairlinePass } from '../lib/hairline-pass.js';
+// three.js is for David alone, and the heaviest thing here: fetched after the page is up
+let THREE;
+const davidKit = () => Promise.all([import('three'), import('three/examples/jsm/loaders/GLTFLoader.js'), import('three/examples/jsm/libs/meshopt_decoder.module.js'), import('../lib/hairline-pass.js')]);
+const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 700 }) : setTimeout(f, 120));
 import { Cam, proj, toward, circ, inside, setLight, shadeOf } from '../lib/iso.js';
 import { fillKeyed } from '../lib/keyed-fill.js';
-import { phone, cabinet, CABINET_REST, CABINET_OUT, atlas, restHull, CELLS, ATLAS_REST, REACH } from './draw.js';
+import { phone, phoneMids, cabinet, drawerAt, CABINET_REST, CABINET_OUT, CABINET_MAX, atlas, restHull, CELLS, ATLAS_REST, REACH } from './draw.js';
 import { AMP, CAP } from '../atlas/scene.js';
 
 /* One object on the pop page: it lives in a stage element (a comic panel, or the full
@@ -17,6 +17,10 @@ import { AMP, CAP } from '../atlas/scene.js';
    system   the token cabinet; hovered, its drawers slide out one after another
    motion   the spring atlas; the pillar under the pointer is plucked, and entering
             sends a ring out across the field
+
+   and, under a mouse, each answers where the pointer is: David turns his head toward it,
+   the phone opens a gap at the layer under it and inks that layer, the cabinet pulls the
+   drawer under it furthest. The strip's own movement gives every object a turn too.
 
    One model each (Kaero): θ, a turntable, and the object's own springs. The loop
    draws only when something moved (rule 07).                                        */
@@ -53,31 +57,38 @@ export function createObject(kind, { onOpen, colors }) {
     canvas = document.createElement('canvas');
     canvas.className = 'obj-canvas';
     o.el = canvas;
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, premultipliedAlpha: false });
-    pass = createHairlinePass(renderer, { transparent: true });
-    pass.setColors(colors.david);
-    pass.setLook({ detail: 0.55, stroke: 1.6, muscle: 0.45 });
-    scene3 = new THREE.Scene(); spinMesh = new THREE.Group(); scene3.add(spinMesh);
-    cam3 = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 20);
-    const az = Math.PI / 4, el = Math.atan(0.5), dist = 6, target = new THREE.Vector3(0, 0.5, 0);
-    cam3.position.set(Math.sin(az) * Math.cos(el) * dist, target.y + Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist);
-    cam3.lookAt(target); cam3.updateMatrixWorld();
-    // the frame: his head, his rock, at any turn (rule 03)
-    const box = new THREE.Box2(new THREE.Vector2(Infinity, Infinity), new THREE.Vector2(-Infinity, -Infinity));
-    for (let i = 0; i < 48; i++) {
-      const a = (i / 48) * Math.PI * 2;
-      for (const [r, y] of [[0.17, 1.0], [0.2, 0.0], [0.14, 0.55]]) {
-        const p = new THREE.Vector3(Math.sin(a) * r, y, Math.cos(a) * r).applyMatrix4(cam3.matrixWorldInverse);
-        box.expandByPoint(new THREE.Vector2(p.x, p.y));
+    idle(async () => {
+      const [three, { GLTFLoader }, { MeshoptDecoder }, { createHairlinePass }] = await davidKit();
+      THREE = three;
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, premultipliedAlpha: false });
+      pass = createHairlinePass(renderer, { transparent: true });
+      pass.setColors(colors.david);
+      pass.setLook({ detail: 0.55, stroke: 1.6, muscle: 0.45 });
+      scene3 = new THREE.Scene(); spinMesh = new THREE.Group(); scene3.add(spinMesh);
+      cam3 = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 20);
+      const az = Math.PI / 4, el = Math.atan(0.5), dist = 6, target = new THREE.Vector3(0, 0.5, 0);
+      cam3.position.set(Math.sin(az) * Math.cos(el) * dist, target.y + Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist);
+      cam3.lookAt(target); cam3.updateMatrixWorld();
+      // the frame: his head, his rock, at any turn (rule 03)
+      const box = new THREE.Box2(new THREE.Vector2(Infinity, Infinity), new THREE.Vector2(-Infinity, -Infinity));
+      for (let i = 0; i < 48; i++) {
+        const a = (i / 48) * Math.PI * 2;
+        for (const [r, y] of [[0.17, 1.0], [0.2, 0.0], [0.14, 0.55]]) {
+          const p = new THREE.Vector3(Math.sin(a) * r, y, Math.cos(a) * r).applyMatrix4(cam3.matrixWorldInverse);
+          box.expandByPoint(new THREE.Vector2(p.x, p.y));
+        }
       }
-    }
-    davidExtent = box;
-    new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(window.DAVID_MODEL_URL || './models/david/david-mid.glb', gltf => {
-      let geo;
-      gltf.scene.traverse(m => { if (m.isMesh && !geo) { m.updateWorldMatrix(true, false); geo = m.geometry.clone().applyMatrix4(m.matrixWorld); } });
-      if (!geo.attributes.normal) geo.computeVertexNormals();
-      spinMesh.add(new THREE.Mesh(geo, pass.material(1, { form: !!geo.attributes._formnormal })));
-      o.dirty = true;
+      davidExtent = box;
+      resize();
+      // (a page that carries the model inline may hand over a promise of its url instead)
+      const url = await Promise.resolve(window.DAVID_MODEL_URL_P || window.DAVID_MODEL_URL || './models/david/david-mid.glb');
+      new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(url, gltf => {
+        let geo;
+        gltf.scene.traverse(m => { if (m.isMesh && !geo) { m.updateWorldMatrix(true, false); geo = m.geometry.clone().applyMatrix4(m.matrixWorld); } });
+        if (!geo.attributes.normal) geo.computeVertexNormals();
+        spinMesh.add(new THREE.Mesh(geo, pass.material(1, { form: !!geo.attributes._formnormal })));
+        o.dirty = true; o.loaded = true;
+      });
     });
   } else {
     svg = document.createElementNS(NS, 'svg');
@@ -100,11 +111,15 @@ export function createObject(kind, { onOpen, colors }) {
 
   /* ---- each object's own springs ---- */
   const layers = [0, 0, 0, 0, 0].map(() => ({ ...sp(0), due: Infinity, to: 0 }));
+  const lift = [0, 0, 0, 0, 0].map(() => sp(0));      // mm, the gap the pointer opens
+  const look = sp(0);                                   // David's turn toward the pointer
+  let hot = -1, spin = 0, spinV = 0;                    // the strip's movement turns them a little
+  const LIFT = 6;
   const drawers = CABINET_REST.map(x => ({ ...sp(x), due: Infinity, to: x }));
   const answers = [], SUM = new Float64Array(CELLS.length);
   let lastCell = -1, clock = 0;
   const C_ = Cam(45, 0.5, 1);
-  const setAz = () => { C_.az = (45 * Math.PI) / 180 - table.theta - drift; };
+  const setAz = () => { C_.az = (45 * Math.PI) / 180 - table.theta - drift - spin; };
 
   function setHover(on) {
     if (on === o.hover) return;
@@ -114,9 +129,28 @@ export function createObject(kind, { onOpen, colors }) {
       layers.forEach((L, i) => { L.due = clock + Math.abs(i - 2) * 0.045; L.to = on ? 1 : 0; });
     } else if (kind === 'system') {
       // top drawer first going out, bottom first coming home
-      drawers.forEach((d, k) => { d.due = clock + (on ? 3 - k : k) * 0.07; d.to = on ? CABINET_OUT[k] : CABINET_REST[k]; });
+      drawers.forEach((d, k) => { d.due = clock + (on ? 3 - k : k) * 0.07; d.to = drawerTo(k, on); });
     } else if (kind === 'motion' && on) wave(0, 0);
+    if (!on) setHot(-1);
     o.dirty = true;
+  }
+  const drawerTo = (k, on) => !on ? CABINET_REST[k] : hot < 0 ? CABINET_OUT[k] : k === hot ? CABINET_MAX : CABINET_OUT[k] * 0.45;
+  function setHot(h) {
+    if (h === hot) return;
+    hot = h;
+    if (kind === 'product') lift.forEach((L, i) => (L.t = h < 0 ? 0 : i > h ? LIFT : i === h ? LIFT / 2 : 0));
+    if (kind === 'system' && o.hover) drawers.forEach((d, k) => { d.to = drawerTo(k, true); if (d.due === Infinity) d.t = d.to; });
+    o.dirty = true;
+  }
+  // the pointer has left: everything it was answering goes home
+  function away() { setHot(-1); look.t = 0; lastCell = -1; }
+  // the strip moved by dpx: a turn that dies away, as a turntable nudged in passing
+  function nudge(dpx) { if (!reduced) spinV += dpx * 0.0016; }
+  // the drawing's shape, width over height: for moving it between stages without stretching
+  function aspect() {
+    if (svg) { const vb = svg.viewBox.baseVal; return vb.width / vb.height; }
+    if (!davidExtent) return 0.42;          // his usual shape, until three.js is here
+    const sz = davidExtent.getSize(new THREE.Vector2()); return sz.x / sz.y;
   }
   // the atlas: a kick is its own answer, and answers add (as ripples on water do)
   function kick(n, a) { if (!reduced) answers.push({ n, a, x: 0, v: 0, t: 0 }); }
@@ -124,12 +158,32 @@ export function createObject(kind, { onOpen, colors }) {
   function wave(cx, cy) { if (!reduced) waves.push({ cx, cy, r: -1e-6 }); }
 
   function pointer(e) {
-    if (kind !== 'motion' || !svg) return;
-    // the pillar under the pointer, tested on the pillars at rest (rule 01)
+    if (kind === 'art') {
+      // he turns his head toward the pointer, a little, through the spring
+      const r = o.stage.getBoundingClientRect();
+      look.t = Math.max(-0.5, Math.min(0.5, (e.clientX - r.left) / r.width - 0.5)) * 0.9;
+      return;
+    }
     const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
     const q = pt.matrixTransform(g.getScreenCTM().inverse());
     setAz();
     const P = proj(C_), T = toward(C_);
+    if (kind === 'product') {
+      // the layer whose middle is nearest, once they stand apart (tested where they are headed)
+      const apart = layers.reduce((a, L) => a + L.to, 0) / layers.length;
+      if (apart < 0.5) return setHot(-1);
+      const mids = phoneMids(P, layers.map(L => L.to), lift.map(L => L.t));
+      let best = -1, bd = Infinity;
+      mids.forEach((m, i) => { if (i === 1 && layers[1].to < 0.04) return; const dd = Math.hypot(m[0] - q.x, m[1] - q.y); if (dd < bd) { bd = dd; best = i; } });
+      return setHot(best);
+    }
+    if (kind === 'system') {
+      // the drawer whose front holds the pointer, tested where each is headed (rule 01)
+      const k = drawerAt(P, T, drawers.map(d => d.to), [q.x, q.y]);
+      if (k >= 0 || !o.hover) setHot(k);
+      return;
+    }
+    // the pillar under the pointer, tested on the pillars at rest (rule 01)
     const near = CELLS.map((c, n) => ({ n, k: T[0] * c.cx + T[1] * c.cy })).sort((a, b) => b.k - a.k);
     for (const { n } of near) if (inside([q.x, q.y], restHull(P, n))) { if (n !== lastCell) { lastCell = n; kick(n, 0.55); } return; }
   }
@@ -141,7 +195,9 @@ export function createObject(kind, { onOpen, colors }) {
     let moved = false;
     const th = table.theta;
     if (o._th !== th) { o._th = th; moved = true; }
-    if (kind === 'art' && !reduced) { drift += dt * (o.hover ? 0.9 : 0.22); moved = true; }
+    if (kind === 'art' && !reduced) { drift += dt * (o.hover ? 0.5 : 0.22); moved = true; if (look.x !== look.t || look.v) spring(look, dt); }
+    if (spinV) { spin += spinV * dt; spinV *= Math.exp(-2.6 * dt); if (Math.abs(spinV) < 1e-3) spinV = 0; moved = true; }
+    if (kind === 'product') for (const L of lift) if (L.x !== L.t || L.v) { spring(L, dt); moved = true; }
     if (kind === 'product') for (const L of layers) { if (clock >= L.due) { L.t = L.to; L.due = Infinity; } if (L.x !== L.t || L.v) { spring(L, dt); moved = true; } }
     if (kind === 'system') for (const d of drawers) { if (clock >= d.due) { d.t = d.to; d.due = Infinity; } if (d.x !== d.t || d.v) { spring(d, dt); moved = true; } }
     if (kind === 'motion' && (answers.length || waves.length)) {
@@ -172,7 +228,8 @@ export function createObject(kind, { onOpen, colors }) {
     if (!o.dirty || !o.stage) return;
     o.dirty = false;
     if (kind === 'art') {
-      spinMesh.rotation.y = table.theta + drift;
+      if (!pass) return;
+      spinMesh.rotation.y = table.theta + drift + spin + look.x;
       pass.render(scene3, cam3, -1);
       return;
     }
@@ -183,13 +240,13 @@ export function createObject(kind, { onOpen, colors }) {
     const c = Math.cos(C_.az), sn = Math.sin(C_.az), right = [c, -sn, 0];
     const L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
     setLight(L, { mode: 'solid' });          // the phone, cabinet and atlas: shadowed walls in plain ink
-    const list = kind === 'product' ? phone(P, T, layers.map(L => Math.max(0, L.x)))
-      : kind === 'system' ? cabinet(P, T, drawers.map(d => Math.max(0, d.x)))
+    const list = kind === 'product' ? phone(P, T, layers.map(L => Math.max(0, L.x)), lift.map(L => L.x), hot)
+      : kind === 'system' ? cabinet(P, T, drawers.map(d => Math.max(0, d.x)), hot)
       : atlas(P, T, CELLS.map((c, n) => ATLAS_REST[n] + AMP * knee(SUM[n])), -1);
     const out = [];
     for (const e of list) {
       out.push(e);
-      if (e[0] === 'sil' || e[0] === 'sil hi') { const sh = shadeOf(e[1]); if (sh) out.push(['shade', sh, e[2] + '-sh']); }
+      if (e[0] === 'sil' || e[0] === 'sil hi' || e[0] === 'sil hot') { const sh = shadeOf(e[1]); if (sh) out.push(['shade', sh, e[2] + '-sh']); }
     }
     setLight(null);
     fillKeyed(g, out);
@@ -214,7 +271,7 @@ export function createObject(kind, { onOpen, colors }) {
       svg.querySelector('feTurbulence').setAttribute('baseFrequency', (0.55 / kRoom).toFixed(4));
       svg.querySelector('feDisplacementMap').setAttribute('scale', (2.6 / kRoom).toFixed(3));
     }
-    if (!o.stage || kind !== 'art') { o.dirty = true; return; }
+    if (!o.stage || kind !== 'art' || !renderer) { o.dirty = true; return; }
     const r = o.stage.getBoundingClientRect(), w = Math.max(1, r.width), h = Math.max(1, r.height);
     const dpr = Math.min(window.devicePixelRatio || 1, 2) * 1.25;
     renderer.setPixelRatio(dpr); renderer.setSize(w, h, false);
@@ -241,7 +298,7 @@ export function createObject(kind, { onOpen, colors }) {
     });
     target.addEventListener('pointermove', e => {
       if (!target.contains(o.el)) return;
-      if (e.pointerType === 'mouse') { setHover(true); pointer(e); }
+      if (e.pointerType === 'mouse' && !dragging) { setHover(true); pointer(e); }
       if (!down) return;
       if (!dragging && Math.abs(e.clientX - down.x) > 8 && Math.abs(e.clientX - down.x) > Math.abs(e.clientY - down.y)) {
         dragging = true; table.grab(); target.setPointerCapture(e.pointerId); target.classList.add('turning');
@@ -260,9 +317,9 @@ export function createObject(kind, { onOpen, colors }) {
     };
     target.addEventListener('pointerup', up);
     target.addEventListener('pointercancel', up);
-    target.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !o.open) { setHover(false); lastCell = -1; } });
+    target.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') away(); });
   }
 
-  Object.assign(o, { step: dt => step(dt, { dragging }), draw, mount, resize, bind, setHover, wave });
+  Object.assign(o, { step: dt => step(dt, { dragging }), draw, mount, resize, bind, setHover, wave, nudge, aspect, away });
   return o;
 }
