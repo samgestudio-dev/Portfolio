@@ -1,6 +1,19 @@
 import { createTurntable } from '../lib/turntable.js';
 // three.js is for David alone, and the heaviest thing here: fetched after the page is up
 let THREE;
+// a copy of a (quantized) mesh with its attributes as plain floats, so it can be moved into place:
+// moved in its 16-bit storage, a point past ±1 wraps round to the far side (long spikes)
+function floatGeo(THREE, g) {
+  const out = g.clone();
+  for (const k in out.attributes) {
+    const a = out.attributes[k];
+    if (a.array instanceof Float32Array && !a.isInterleavedBufferAttribute) continue;
+    const n = a.itemSize, f = new Float32Array(a.count * n), get = ['getX', 'getY', 'getZ', 'getW'];
+    for (let i = 0; i < a.count; i++) for (let j = 0; j < n; j++) f[i * n + j] = a[get[j]](i);
+    out.setAttribute(k, new THREE.BufferAttribute(f, n));
+  }
+  return out;
+}
 const davidKit = () => Promise.all([import('three'), import('three/examples/jsm/loaders/GLTFLoader.js'), import('three/examples/jsm/libs/meshopt_decoder.module.js'), import('../lib/hairline-pass.js'), import('./david-real.js')]);
 const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 700 }) : setTimeout(f, 120));
 import { Cam, proj, toward, circ, inside, setLight, shadeOf } from '../lib/iso.js';
@@ -92,7 +105,7 @@ export function createObject(kind, { onOpen, colors }) {
       const url = await Promise.resolve(window.DAVID_MODEL_URL_P || window.DAVID_MODEL_URL || './models/david/david-mid.glb');
       new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(url, gltf => {
         let geo;
-        gltf.scene.traverse(m => { if (m.isMesh && !geo) { m.updateWorldMatrix(true, false); geo = m.geometry.clone().applyMatrix4(m.matrixWorld); } });
+        gltf.scene.traverse(m => { if (m.isMesh && !geo) { m.updateWorldMatrix(true, false); geo = floatGeo(THREE, m.geometry).applyMatrix4(m.matrixWorld); } });
         if (!geo.attributes.normal) geo.computeVertexNormals();
         spinMesh.add(new THREE.Mesh(geo, pass.material(1, { form: !!geo.attributes._formnormal })));
         // where his head is, in his own units: the middle of everything above the chin
@@ -104,12 +117,12 @@ export function createObject(kind, { onOpen, colors }) {
         real = createRealLayers(THREE, renderer, geo);
         real.resize(bufW, bufH);
         real.setLayers({ real: realOf(zoom) });
-        // on a computer his close-up is drawn from the full scan (1.2M triangles, 3.6 MB), fetched
+        // on a computer his close-up is drawn from the fine scan (224k triangles, 0.9 MB), fetched
         // the first time it is wanted; the mid mesh stands in until it arrives
         if (matchMedia('(min-width: 861px) and (hover: hover)').matches) wantHi = () => {
           wantHi = null;
           Promise.resolve(window.DAVID_FULL_URL_F ? window.DAVID_FULL_URL_F() : './models/david/david-full.glb').then(u => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(u, g2 => {
-            let hg; g2.scene.traverse(m => { if (m.isMesh && !hg) { m.updateWorldMatrix(true, false); hg = m.geometry.clone().applyMatrix4(m.matrixWorld); } });
+            let hg; g2.scene.traverse(m => { if (m.isMesh && !hg) { m.updateWorldMatrix(true, false); hg = floatGeo(THREE, m.geometry).applyMatrix4(m.matrixWorld); } });
             if (!hg.attributes.normal) hg.computeVertexNormals();
             real.setGeometry(hg); o.dirty = true;
           }));
@@ -234,8 +247,9 @@ export function createObject(kind, { onOpen, colors }) {
     // every object turns slowly on its own, the way the strip last moved (David a little faster when hovered)
     if (!reduced) { if (dir.x !== dir.t || dir.v) spring(dir, dt); drift += dt * (kind === 'art' ? (o.hover ? 0.5 : 0.22) : 0.16) * dir.x; moved = true; }
     if (kind === 'art' && !reduced && (look.x !== look.t || look.v)) spring(look, dt);
-    // the yellow line boils: a new hand 24 times a second, while it shows
-    if (real && real.layers.outline > 0) { const f = Math.floor(clock * 24); if (f !== o._boil) { o._boil = f; real.setBoil(f); moved = true; } }
+    // the yellow line is redrawn by a new hand only while he turns (at most 24 a second); one
+    // more frame when a drawing is still owed
+    if (real && real.pending()) moved = true;
     if (spinV) { spin += spinV * dt; spinV *= Math.exp(-2.6 * dt); if (Math.abs(spinV) < 1e-3) spinV = 0; moved = true; }
     if (kind === 'product') for (const L of lift) if (L.x !== L.t || L.v) { spring(L, dt); moved = true; }
     if (kind === 'product') for (const L of layers) { if (clock >= L.due) { L.t = L.to; L.due = Infinity; } if (L.x !== L.t || L.v) { spring(L, dt); moved = true; } }

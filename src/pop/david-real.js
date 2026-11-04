@@ -6,11 +6,13 @@
    paint    what was put on him: cyan paint at his eye with a drip, a pink spray at his neck with
             two drips, a yellow smiley on each side of his chest. Painted in his own coordinates,
             so they turn with him and are hidden by him as the real thing would be
-   outline  a loud yellow graffiti line around him, a little outside his outline, thick and
-            uneven, scrubbed on in streaks (an inverted hull, its push along the normals noisy)
+   outline  a loud yellow graffiti line right behind him: marker strokes scribbled round his
+            outline by a seeded hand, remade only as he turns (scribble.js)
 
    The real layer (with the paint and outline in it) is rendered to its own picture and laid
    over the line drawing at `real`; the line drawing is skipped once it is fully covered.      */
+
+import { createScribble } from './scribble.js';
 
 const GLSL_NOISE = /* glsl */ `
   float h3(vec3 p) { p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -141,45 +143,11 @@ export function createRealLayers(THREE, renderer, geo) {
   const statue = new THREE.Mesh(geo, marble);
   statue.castShadow = statue.receiveShadow = true;
 
-  // the yellow line around him, right behind him: his shape pushed out along its normals in
-  // three loose passes of a marker, each scribbled in hatching at its own angle, jagged at its
-  // edge, skipping here and there, drawn on from his crown down, and redrawn 24 times a
-  // second with a new hand, as a line boils in drawn animation. He is painted over all three.
-  // (No face culling: the scanned mesh is not consistently wound.)
-  const OU = { uOut: { value: 0 }, uBoil: { value: 0 } };
-  const strand = (width, seed, angle, period, ink) => new THREE.Mesh(geo, new THREE.ShaderMaterial({
-    uniforms: OU, side: THREE.DoubleSide, depthWrite: false, depthTest: false,
-    vertexShader: /* glsl */ `
-      uniform float uOut, uBoil; varying vec3 vP;
-      ${GLSL_NOISE}
-      void main() {
-        vP = position;
-        vec3 q = position + vec3(uBoil * 0.731, uBoil * 0.377, uBoil * 0.513) + ${seed.toFixed(1)};
-        float w = ${width} * (0.25 + 1.2 * n3(q * 21.0) + 0.7 * (n3(q * 75.0) - 0.5) + 0.35 * (n3(q * 210.0) - 0.5));
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal * max(0.0, w) * smoothstep(0.0, 0.3, uOut), 1.0);
-      }`,
-    fragmentShader: /* glsl */ `
-      uniform float uOut, uBoil; varying vec3 vP;
-      ${GLSL_NOISE}
-      void main() {
-        vec3 q = vP + vec3(uBoil * 0.731, uBoil * 0.377, uBoil * 0.513) + ${seed.toFixed(1)};
-        if (vP.y < 1.03 - uOut * 0.65 - n3(q * 30.0) * 0.05) discard;           // drawn on from the top down
-        if (n3(q * 36.0) < 0.12) discard;                                        // where the marker skipped
-        // the hatching: strokes at this pass's angle, wobbling, of uneven weight
-        vec2 dir = vec2(cos(${angle.toFixed(3)}), sin(${angle.toFixed(3)}));
-        // (bent hard by two scales of noise, so the strokes swing and cross like a quick marker)
-        vec2 fc = gl_FragCoord.xy;
-        float along = dot(fc, dir) / ${period.toFixed(1)} + 3.2 * n3(vec3(fc * 0.006, uBoil * 0.7)) + 1.1 * n3(vec3(fc * 0.03, uBoil));
-        if (fract(along) > ${ink.toFixed(2)} + 0.35 * (n3(vec3(fc * 0.02, uBoil + 3.0)) - 0.5)) discard;
-        float st = n3(vec3(gl_FragCoord.xy * vec2(0.08, 0.3), uBoil) + vP * 5.0);
-        gl_FragColor = vec4(mix(vec3(1.0, 0.84, 0.0), vec3(1.0, 0.96, 0.3), st), 1.0);
-      }`,
-  }));
-  // widest and loosest first, the densest last (closest to him)
-  const strands = [strand(0.028, 7.0, 0.62, 17.0, 0.52), strand(0.018, 3.0, -0.95, 12.0, 0.6), strand(0.01, 1.0, 0.2, 9.0, 0.8)];
-  strands.forEach((m, k) => (m.renderOrder = -10 + k));
-  const hull = new THREE.Group(); hull.add(...strands);
-  group.add(hull, statue);
+  // the yellow line around him, right behind him: real marker strokes round his outline
+  // (scribble.js), laid down before he is painted over them
+  const OU = { uOut: { value: 0 } };
+  const scrib = createScribble(THREE, renderer); scrib.setGeometry(geo);
+  group.add(statue);
 
   // the picture the real layer is drawn to, and the sheet it is laid over the line drawing with
   const rt = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: true });
@@ -192,10 +160,9 @@ export function createRealLayers(THREE, renderer, geo) {
     for (const k of ['real', 'paint', 'outline']) if (k in v) L[k] = v[k];
     U.uPaint.value = L.paint;
     OU.uOut.value = L.outline;
-    statue.visible = hull.visible = L.real > 0;
-    hull.visible = L.outline > 0;
+    statue.visible = L.real > 0;
   }
-  function resize(w, h) { rt.setSize(Math.max(1, w), Math.max(1, h)); }
+  function resize(w, h) { rt.setSize(Math.max(1, w), Math.max(1, h)); scrib.resize(w, h); }
   // after the line drawing (or instead of it): the real layer, over it at L.real
   // place the perspective camera to see what an orthographic one (oc) frames, at the depth of
   // point z (view space), widening from nearly flat (fov ~2°) to fov as k runs 0 → 1: a dolly
@@ -214,13 +181,18 @@ export function createRealLayers(THREE, renderer, geo) {
     rig.position.set(0, 0.6, 0); rig.quaternion.copy(cam.quaternion);
     const ac = renderer.autoClear, cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha();
     renderer.setClearColor(0x000000, 0);
+    scrib.update(cam, rotY, L.outline);
+    const behind = L.outline > 0;
     if (L.real >= 0.999 || !drewLine) {
-      renderer.setRenderTarget(null); renderer.autoClear = !drewLine;
+      renderer.setRenderTarget(null); renderer.autoClear = false;
       if (!drewLine) renderer.clear();
+      if (behind) scrib.render();
       renderer.render(scene, cam);
     } else {
-      renderer.setRenderTarget(rt); renderer.autoClear = true; renderer.render(scene, cam);
-      renderer.setRenderTarget(null); renderer.autoClear = false;
+      renderer.setRenderTarget(rt); renderer.autoClear = false; renderer.clear();
+      if (behind) scrib.render();
+      renderer.render(scene, cam);
+      renderer.setRenderTarget(null);
       quadMat.opacity = L.real; renderer.render(quadScene, quadCam);
     }
     renderer.autoClear = ac; renderer.setClearColor(cc, ca);
@@ -237,9 +209,9 @@ export function createRealLayers(THREE, renderer, geo) {
     return { p: p.toArray().map(v => +v.toFixed(4)), n: n.toArray().map(v => +v.toFixed(3)) };
   }
   // a finer mesh of the same statue (same units), when it arrives
-  // (the statue only: the yellow line needs no finer shape than it has, and is drawn three times)
-  function setGeometry(g) { statue.geometry = g; }
-  // the line's hand for frame k (24 a second)
-  function setBoil(k) { OU.uBoil.value = k % 97; }
-  return { setLayers, resize, render, pick, frame, setGeometry, setBoil, layers: L, uniforms: U, camera: cam };
+  // (the yellow line is traced from it too, so it hugs the shape he is drawn with)
+  function setGeometry(g) { statue.geometry = g; scrib.setGeometry(g); }
+  return { setLayers, resize, render, pick, frame, setGeometry, layers: L, uniforms: U, camera: cam,
+    // the line is waiting to be remade (he turned faster than 24 drawings a second)
+    pending: () => scrib.isPending() };
 }
