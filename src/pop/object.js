@@ -321,6 +321,15 @@ export function createObject(kind, { onOpen, colors }) {
     target.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') away(); });
   }
 
-  Object.assign(o, { step: dt => step(dt, { dragging }), draw, mount, resize, bind, setHover, wave, nudge, aspect, away });
+  // a still of the drawing as it stands: the SVG copied, David's canvas painted into a plain one
+  // (read back in the same task it was rendered, while WebGL still holds the picture)
+  function snapshot() {
+    if (svg) return svg.cloneNode(true);
+    const c = document.createElement('canvas');
+    c.width = canvas.width; c.height = canvas.height; c.className = canvas.className;
+    if (pass) { o.dirty = true; draw(); c.getContext('2d').drawImage(canvas, 0, 0); }
+    return c;
+  }
+  Object.assign(o, { step: dt => step(dt, { dragging }), draw, mount, resize, bind, setHover, wave, nudge, aspect, away, snapshot });
   return o;
 }
