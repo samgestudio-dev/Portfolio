@@ -145,43 +145,68 @@ function stopGlide() { if (glide) { glide.kill(); glide = null; strip.classList.
 function goTo(i) { return done(glideTween(Math.max(0, Math.min(FRAMES.length - 1, i)))); }
 $('home').addEventListener('click', e => { e.preventDefault(); if (current) close(); else goTo(0); });
 
-/* ---- moving the strip: wheel, trackpad, a drag on empty ground, keys ---- */
+/* ---- moving the strip: wheel, trackpad, a drag or a swipe, keys. It pages: a move past
+   PAGE of a frame (or a flick) goes on to the next frame, anything less goes back, the same
+   on a phone (down the page) as on a computer (along it). The strip never snaps by itself. ---- */
+const PAGE = 0.18, FLICK = 0.45;                 // of a frame; px per ms
+// where a move that began on frame i0 should end, from how far it went and how fast
+function pageFrom(i0, v = 0) {
+  const off = fracIndex() - i0;
+  let to = i0;
+  if (Math.abs(v) > FLICK) to = i0 + (v < 0 ? 1 : -1);                       // a flick: one frame on
+  else if (off > PAGE) to = Math.floor(fracIndex() + 1 - PAGE);
+  else if (off < -PAGE) to = Math.ceil(fracIndex() - 1 + PAGE);
+  return Math.max(0, Math.min(FRAMES.length - 1, to));
+}
+// the wheel: a mouse's notch is a page; a trackpad's run is followed, then paged when it stops
+let wheel0 = null, settleT = 0, notchT = 0;
 strip.addEventListener('wheel', e => {
-  if (current || e.ctrlKey) return;
-  if (vertical()) { stopGlide(); return; }                     // the strip is the page's own scroller there
-  const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  if (current || e.ctrlKey || vertical()) return;
+  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
   if (e.target.closest('.p-stage') && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // a sideways swipe on an object turns it
   e.preventDefault();
-  stopGlide();
-  strip.scrollLeft += dx;
-  // once the wheel (or a trackpad's coast) goes quiet, settle on the nearest frame
+  const notch = e.deltaMode !== 0 || (Math.abs(d) >= 60 && Number.isInteger(d) && e.deltaX === 0);
+  if (notch) {
+    if (performance.now() < notchT) return;                    // one page a notch, not one a tick
+    notchT = performance.now() + 380;
+    goTo(Math.round(fracIndex()) + Math.sign(d));
+    return;
+  }
+  if (wheel0 === null) { stopGlide(); wheel0 = Math.round(fracIndex()); }
+  strip.scrollLeft += d;
   clearTimeout(settleT);
-  settleT = setTimeout(() => { if (!current && !pan && !busy) goTo(Math.round(fracIndex())); }, 140);
+  settleT = setTimeout(() => { const i0 = wheel0; wheel0 = null; if (!current && !pan && !busy) goTo(pageFrom(i0)); }, 140);
 }, { passive: false });
-let settleT = 0;
+// a drag with the mouse, or a finger: the strip follows 1:1, then pages
 let pan = null, panned = false;
 strip.addEventListener('pointerdown', e => {
-  if (current || e.button || e.target.closest('.p-stage, .hl, .mail, a, button')) return;
+  if (current || e.button || e.target.closest('.hl, .mail, a, button')) return;
+  // on an object a sideways drag turns it; only down the page (on a phone) does it move the strip
+  if (e.target.closest('.p-stage') && !vertical()) return;
   stopGlide();
-  pan = { x: e.clientX, y: e.clientY, sl: strip.scrollLeft, st: strip.scrollTop, id: e.pointerId, t: performance.now(), v: 0, last: e.clientX };
+  pan = { x: e.clientX, y: e.clientY, sl: strip.scrollLeft, st: strip.scrollTop, id: e.pointerId, t: performance.now(), v: 0, lx: e.clientX, ly: e.clientY, i0: Math.round(fracIndex()), stage: !!e.target.closest('.p-stage') };
   panned = false;
 });
 strip.addEventListener('pointermove', e => {
   if (!pan) return;
   const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
-  if (!panned && Math.hypot(dx, dy) > 8) { panned = true; strip.classList.add('panning'); strip.setPointerCapture(pan.id); }
-  if (!panned) return;
+  if (!panned) {
+    if (Math.hypot(dx, dy) < 8) return;
+    const along = vertical() ? Math.abs(dy) > Math.abs(dx) : true;
+    if (!along) { pan = null; return; }                         // sideways on a phone's object: it turns
+    panned = true; strip.classList.add('panning'); strip.setPointerCapture(pan.id);
+  }
   if (vertical()) strip.scrollTop = pan.st - dy; else strip.scrollLeft = pan.sl - dx;
-  const now = performance.now(); pan.v = (e.clientX - pan.last) / Math.max(1, now - pan.t); pan.t = now; pan.last = e.clientX;
+  const now = performance.now(), dt = Math.max(1, now - pan.t);
+  pan.v = vertical() ? (e.clientY - pan.ly) / dt : (e.clientX - pan.lx) / dt;
+  pan.t = now; pan.lx = e.clientX; pan.ly = e.clientY;
 });
 const endPan = e => {
   if (!pan) return;
-  const was = panned, v = pan.v; pan = null;
+  const was = panned, v = performance.now() - pan.t > 90 ? 0 : pan.v, i0 = pan.i0; pan = null;
   strip.classList.remove('panning');
   if (!was) return;
-  // a throw carries it to the next frame; otherwise it settles on the nearest
-  const step = vertical() ? 0 : v < -0.6 ? 1 : v > 0.6 ? -1 : 0;
-  goTo(step ? Math.round(fracIndex()) + step : Math.round(fracIndex()));
+  goTo(pageFrom(i0, v));
   setTimeout(() => (panned = false), 50);
 };
 strip.addEventListener('pointerup', endPan);
