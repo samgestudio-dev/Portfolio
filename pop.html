@@ -79,7 +79,8 @@
       .turning { cursor: grabbing; }
 
       /* the drawings in ink: Hairline's solids, printed */
-      .obj-svg g { filter: drop-shadow(5px 5px 0 var(--ink)); }
+      .obj-svg { filter: drop-shadow(5px 5px 0 var(--ink)); }
+      .obj-svg .shade { fill: var(--ink); stroke: none; }
       .obj-svg path { fill: var(--white); stroke: var(--ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
       .obj-svg .cr { fill: none; stroke-width: 1; }
       .obj-svg .sil.ui { stroke-width: 1.1; }
