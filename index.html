@@ -2,13 +2,116 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f4f2eb" />
-    <meta name="description" content="Sam's portfolio — engineering, product, motion, and fine art. Four connected ways of making." />
-    <title>Sam — Four ways of making</title>
+    <title>Sam — Four Objects</title>
+    <meta name="claude:viewport-fit-sides" content="cover" />
+    <meta name="description" content="Sam's portfolio: four objects on a ring, one for each way of making — art, product, system and motion." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --paper: #f4f2eb; --ink: #292922; --muted: #76766b; --accent: #bc422c; --rule: #deddd3;
+        --hl-hi: #232327; --hl-edge: #a4a4ac; --hl-mid: #c3c3c9; --hl-lo: #e0e0e4; --hl-sw: 0.9;
+        --ease: cubic-bezier(.32, .72, 0, 1);
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --paper: #131311; --ink: #eceae1; --muted: #8b8a80; --accent: #e0674f; --rule: #2a2a26; --hl-hi: #d0d6e0; --hl-edge: #5b5d64; --hl-mid: #3e3e44; --hl-lo: #29292d;
+          color-scheme: dark;
+        }
+      }
+      :root[data-theme="dark"] {
+        --paper: #131311; --ink: #eceae1; --muted: #8b8a80; --accent: #e0674f; --rule: #2a2a26; --hl-hi: #d0d6e0; --hl-edge: #5b5d64; --hl-mid: #3e3e44; --hl-lo: #29292d;
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font-family: 'DM Sans', system-ui, sans-serif; }
+      body { overflow: hidden; transition: background .4s var(--ease), color .4s var(--ease); }
+      .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+
+      /* the world: one layer per object, stacked by depth each frame */
+      .layer { position: fixed; inset: 0; width: 100vw; height: 100dvh; pointer-events: none; display: block; }
+      .layer path { fill: var(--paper); stroke: var(--hl-mid); stroke-width: var(--hl-sw); vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; transition: stroke 260ms cubic-bezier(.5, 0, .1, 1); }
+      .layer .sil { stroke: var(--hl-edge); }
+      .layer .sil.ui { stroke: var(--hl-mid); }
+      .layer .cr { fill: none; stroke: var(--hl-lo); }
+      .layer .fill { fill: var(--hl-lo); stroke: none; }
+      .layer .mk { fill: none; stroke: var(--hl-mid); }
+      .layer .lo { stroke: var(--hl-lo); }
+      .layer .nf { fill: none; }
+      .layer .dot { fill: var(--hl-mid); stroke: none; }
+      .layer .bed { stroke: var(--hl-lo); }
+      .layer .guide { fill: none; stroke: var(--hl-mid); stroke-dasharray: 0.7 2.1; }
+      .layer .tick { fill: none; stroke: var(--hl-lo); }
+      .layer .ring { fill: none; stroke: var(--hl-mid); }
+      .layer.hot .sil, .layer.hot .sil.ui { stroke: var(--hl-hi); }
+      #hit { position: fixed; inset: 0; touch-action: none; cursor: grab; outline: none; z-index: 20; }
+      #hit.over { cursor: pointer; }
+      #hit.dragging { cursor: grabbing; }
+      #hit:focus-visible { outline: 1.5px solid var(--hl-hi); outline-offset: -6px; }
+
+      header { position: fixed; top: 0; left: 0; right: 0; z-index: 30; display: flex; justify-content: space-between; align-items: baseline; padding-block: calc(22px + env(safe-area-inset-top, 0px)) 0; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); pointer-events: none; }
+      header h1 { margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; }
+      header h1 span { color: var(--muted); font-weight: 400; }
+      header button { pointer-events: auto; font: inherit; font-size: 10px; color: var(--muted); background: none; border: 1px solid var(--rule); padding: 5px 10px; border-radius: 999px; cursor: pointer; }
+      header button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+      /* names under the objects on the ring: HTML, never drawn into the picture */
+      .label { position: fixed; left: 0; top: 0; z-index: 25; font-size: 10px; color: var(--muted); white-space: nowrap; pointer-events: none; transform: translate(-50%, 0); transition: color .26s cubic-bezier(.5, 0, .1, 1); }
+      .label b { font-weight: 500; color: var(--ink); margin-left: 6px; }
+      .label.hot { color: var(--ink); }
+
+      .hint { position: fixed; left: 0; right: 0; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 25; text-align: center; font-size: 10px; color: var(--muted); pointer-events: none; transition: opacity .4s var(--ease); }
+
+      /* the close look's words: beside the object, on the side it is not */
+      .panel { position: fixed; z-index: 40; top: 50%; width: min(360px, 38vw); transform: translateY(-50%); display: flex; flex-direction: column; gap: 14px; opacity: 0; pointer-events: none; transition: opacity .5s var(--ease), translate .7s var(--ease); }
+      .panel.left { left: max(56px, env(safe-area-inset-left, 0px)); translate: -12px 0; }
+      .panel.right { right: max(56px, env(safe-area-inset-right, 0px)); translate: 12px 0; }
+      .panel.on { opacity: 1; translate: 0 0; pointer-events: auto; }
+      .panel .num { font-size: 10px; color: var(--muted); }
+      .panel h2 { margin: 0; font-size: clamp(28px, 3.4vw, 40px); font-weight: 500; letter-spacing: -.6px; line-height: 1.05; text-wrap: balance; }
+      .panel p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink); max-width: 34ch; text-wrap: pretty; }
+      .panel .row { display: flex; gap: 10px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+      .panel a, .panel button { font: inherit; font-size: 11px; color: var(--ink); background: none; border: 1px solid var(--rule); padding: 7px 13px; border-radius: 999px; cursor: pointer; text-decoration: none; }
+      .panel a { border-color: var(--ink); }
+      .panel a:hover { background: var(--ink); color: var(--paper); }
+      .panel button:hover { border-color: var(--muted); }
+      .panel a:focus-visible, .panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+      .panel .steps { margin-left: auto; color: var(--muted); font-size: 10px; }
+
+      /* a phone: the object above, the words below it as a sheet */
+      @media (max-width: 720px) {
+        header { padding-block: calc(18px + env(safe-area-inset-top, 0px)) 0; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+        .panel, .panel.left, .panel.right { left: 0; right: 0; top: auto; bottom: 0; width: auto; transform: none; translate: 0 16px; gap: 10px;
+          padding-block: 22px calc(22px + env(safe-area-inset-bottom, 0px)); padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px));
+          background: var(--paper); border-top: 1px solid var(--rule); }
+        .panel.on { translate: 0 0; }
+        .panel h2 { font-size: 28px; }
+        .panel p { font-size: 14px; }
+      }
+      @media (prefers-reduced-motion: reduce) { .panel { transition: opacity .2s linear; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="./src/main.jsx"></script>
+    <svg class="layer" id="ring" aria-hidden="true"></svg>
+    <div id="hit" tabindex="0" role="application" aria-label="Four objects on a ring: a sculpture, a phone, a token cabinet and a spring atlas. Drag or swipe to turn the ring; click or tap an object to look closer; left and right arrows step round; Enter opens the one in front; Escape goes back."></div>
+    <header>
+      <h1>Sam <span>&middot; design, code &amp; objects</span></h1>
+      <button id="theme" aria-pressed="false">Dark</button>
+    </header>
+    <div class="hint mono" id="hint">Drag to turn &middot; choose an object</div>
+    <aside class="panel" id="panel" aria-live="polite">
+      <div class="num mono" id="p-num"></div>
+      <h2 id="p-title"></h2>
+      <p id="p-text"></p>
+      <div class="row">
+        <a id="p-link" href="#">Enter</a>
+        <button id="p-back" class="mono" aria-label="Back to all four">&times; All four</button>
+        <span class="steps mono" id="p-steps"></span>
+      </div>
+    </aside>
+    <script type="module" src="./src/home/main.js"></script>
   </body>
 </html>

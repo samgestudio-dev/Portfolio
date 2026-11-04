@@ -105,7 +105,7 @@ const lineFrag = /* glsl */`
   uniform sampler2D tV; uniform float uR;
   uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
-  uniform float uHair, uMerge;
+  uniform float uHair, uMerge, uAlpha;
   bool isFill(vec4 s) { float i = oid(s), f = s.b - i; return s.a > 0.0 && i > 1.5 && f > 0.3 && f < 0.6; }
   bool isHot(float i) { return i > uHotLo - 0.5 && i < uHotHi + 0.5; }
   vec3 nrm(vec4 s) { return vec3(s.xy, sqrt(max(0.0, 1.0 - dot(s.xy, s.xy)))); }
@@ -246,6 +246,9 @@ const lineFrag = /* glsl */`
     }
     if (uDebug > 0.5 && !cb) col = mix(cPlate, cHi, clamp(V(vUv) * 8.0, 0.0, 1.0));
     gl_FragColor = vec4(col, uMerge > 0.5 ? ink : 1.0);   // the merge pass reads ink from alpha
+    // transparent: off the solids only the outline's own ink is painted, so the picture
+    // can lie over other drawings (straight alpha: the renderer is not premultiplied)
+    if (uAlpha > 0.5 && cb) gl_FragColor = vec4(uHair > 0.5 ? mix(mix(cLo, cEdge, silOwn), cHi, hot) : mix(cEdge, cHi, hot), sil);
     #include <colorspace_fragment>
   }`;
 
@@ -338,7 +341,8 @@ const guideFrag = /* glsl */`
 // style 'hairline': Hairline's own palette and line hierarchy (see the line pass)
 // lines: 'hairline' for Hairline's line hierarchy · palette: 'hairline' for its plates too
 // merge: lines closer than a gap are drawn as one, so every line has one width
-export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', palette = 'study', merge = false } = {}) {
+// transparent: the ground is left clear (for a canvas made with alpha, not premultiplied)
+export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', palette = 'study', merge = false, transparent = false } = {}) {
   const PALETTES = palette === 'hairline' ? HAIRLINE : THEMES;
   const style = lines;
   const opts = { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
@@ -352,7 +356,7 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
   const uniforms = {
     ...shared, tV: { value: rtV.texture }, uR: { value: 1.5 },
     uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHotLo: { value: -1 }, uHotHi: { value: -1 }, uWorldPx: { value: 0.001 },
-    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 },
+    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 }, uAlpha: { value: transparent ? 1 : 0 },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
     cPlate: { value: col('plate') }, cHi: { value: col('hi') }, cEdge: { value: col('edge') },
     cMid: { value: col('mid') }, cLo: { value: col('lo') },
@@ -412,6 +416,8 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
     },
     // world units per buffer pixel, so the depth plane can be extended across the ring
     setScale(worldPerPx) { uniforms.uWorldPx.value = worldPerPx; },
+    // view depth subtracted before it is stored, so half floats stay precise far from the eye
+    setDepthBias(v) { biasU.value = v; },
     // segments: [[a, b], ...] in the parent's space; returns a mesh to add to the scene
     // graph (for its transform) and to pass to render as the overlay
     guides(segments) {
