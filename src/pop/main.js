@@ -345,6 +345,7 @@ function chromeBox(r, sh) { const b = boxAt(r); gsap.set(b, { boxShadow: `${sh}p
 // a page button lifted out of its place to travel as a box: fixed on the page at rect r with a
 // hard shadow of sh px, its contents at ci (0 hidden); land() puts it back in its place
 const zoomOf = d => (d._zoom ||= { z: 0 });
+const layersOf = d => (d._layers ||= { paint: 0, outline: 0 });
 function fly(el, r, sh, ci = 0) {
   gsap.set(el, { position: 'fixed', left: r.x, top: r.y, right: 'auto', bottom: 'auto', width: r.w, height: r.h, margin: 0, x: 0, y: 0, zIndex: 5, transition: 'none',
     boxShadow: `${sh}px ${sh}px 0 ${INK}`, '--ci': ci, autoAlpha: 1 });
@@ -431,11 +432,13 @@ async function switchTo(id) {
   roomBack.hidden = false;
   // the room becomes the next one underneath: the old object home to its frame, the new one in
   from.obj.open = false; from.obj.setHover(false); from.obj.mount(from.stage); from.obj.setZoom(0);
+  Object.assign(layersOf(from), { paint: 0, outline: 0 }); from.obj.setLayers(layersOf(from));
   from.frame.classList.remove('away'); wake(from);
   current = id;
   room.className = `room ${id}`;
   fillRoom(to);
   to.obj.setHover(false); to.obj.mount(roomStage); to.obj.open = true; to.obj.setZoom(1);
+  Object.assign(layersOf(to), { paint: 1, outline: 1 }); to.obj.setLayers(layersOf(to));
   to.frame.classList.add('away');
   gsap.set([to.obj.el, ...SHARED()], { clearProps: 'all' });
   // the strip, unseen beneath, moves to the next frame, so Back closes onto it
@@ -504,6 +507,9 @@ function grow(id, { replace = false } = {}) {
     .to(room, { clipPath: FULL }, 'grow')
     // David: the camera comes in from all of him to his head as his frame grows
     .fromTo(zoomOf(d), { z: 0 }, { z: d.id === 'art' ? 1 : 0, onUpdate() { d.obj.setZoom(this.targets()[0].z); } }, 'grow')
+    // and once he is close: the paint goes on, then the yellow line is drawn round him
+    .fromTo(layersOf(d), { paint: 0, outline: 0 }, { paint: d.id === 'art' ? 1 : 0, duration: 0.9, ease: 'power2.out', onUpdate() { d.obj.setLayers(this.targets()[0]); } }, `grow+=${T * 0.72}`)
+    .to(layersOf(d), { outline: d.id === 'art' ? 1 : 0, duration: 1.0, ease: 'power2.inOut', onUpdate() { d.obj.setLayers(this.targets()[0]); } }, `grow+=${T * 0.85}`)
     .to(roomDots, { left: 0, top: 0, width: innerWidth, height: innerHeight }, 'grow')
     // the object, from where it stood
     .from(d.obj.el, { ...place(fit(first.stage, A), fit(stage, A), stage) }, 'grow')
@@ -568,6 +574,7 @@ function shrink({ quiet = false, dur = T_CLOSE } = {}) {
     .to([prevB, nextB], { left: to.film.x, top: to.film.y, width: to.film.w, height: to.film.h, boxShadow: `6px 6px 0 ${INK}`, onUpdate: cutClose }, 'shrink+=0.04')
     .to([gCount, gFilm], { autoAlpha: 1, duration: 0.24, ease: 'power1.out' }, `shrink+=${dur * 0.68}`)
     .to(room, { clipPath: inset(fr) }, 'shrink+=0.06')
+    .to(layersOf(d), { paint: 0, outline: 0, duration: dur * 0.45, ease: 'power1.in', onUpdate() { d.obj.setLayers(this.targets()[0]); } }, 'shrink')
     .fromTo(zoomOf(d), { z: d.id === 'art' ? 1 : 0 }, { z: 0, onUpdate() { d.obj.setZoom(this.targets()[0].z); } }, 'shrink+=0.06')
     .to(roomDots, { left: fr.x, top: fr.y, width: fr.w, height: fr.h }, 'shrink+=0.06')
     .to(d.obj.el, { ...place(fit(to.stage, A), fit(stage, A), stage) }, 'shrink+=0.06')
