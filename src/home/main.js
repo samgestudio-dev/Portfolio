@@ -243,7 +243,11 @@ function step(d) { if (sel >= 0) enter((sel + d + N) % N, 'key'); }
 
 /* ---- the words ---------------------------------------------------------------- */
 let panelAt = Infinity, pushed = false;
+// arrived: the camera has come to rest on the chosen one (the words are up); David then
+// shows as chosen, his outline in the bright ink
+let arrived = false;
 function showPanel(on) {
+  arrived = on;
   if (!on) { panel.classList.remove('on'); return; }
   const o = OBJECTS[sel];
   document.getElementById('p-num').textContent = `${o.num} · ${o.name}`;
@@ -425,7 +429,7 @@ function drawDavid(V, o) {
   pass.setLook({ detail: lerp(FAR.detail, T.detail, near), muscle: lerp(FAR.muscle, T.muscle, near), stroke: lerp(FAR.stroke, T.stroke, near) });
   pass.setDepth(lerp(FAR.depth, T.depth, near));
   pass.setDepthBias(Math.max(0, d / SD - 0.8));
-  pass.render(scene3, cam3, hot === o.i ? 1 : -1);
+  pass.render(scene3, cam3, hot === o.i || (sel === o.i && arrived) ? 1 : -1);
 }
 function draw() {
   const V = view({ ...cam, w: W, h: H });
