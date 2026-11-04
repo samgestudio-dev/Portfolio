@@ -40,7 +40,7 @@ for (let i = 0; i < N; i++) {
   FLOOR.add(best);
 }
 export const AMP = 8;                                  // how far a pluck lifts a pillar, mm
-export const CAP = 1.6;                                // how high kicks can stack, in plucks
+export const CAP = 1.2;                                // the ceiling stacked kicks bend into, in plucks
 
 // a value's place along a scale of values (fractional index), for the critical line
 const along = (vals, v) => {

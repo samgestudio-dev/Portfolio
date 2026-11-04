@@ -116,8 +116,11 @@ function stepSprings(dt) {
   ringing = moving.size;
   awake = waves.length + answers.length;
 }
-// stacked answers ease into a ceiling rather than hitting it
-const heights = () => CELLS.map((c, n) => REST[n] + AMP * CAP * Math.tanh(SUM[n] / CAP));
+// Stacked answers add, but no higher than water would let a crest stand: up to one pluck
+// the sum shows as it is, past that it bends over into a ceiling a little above it
+// (as a crest breaks), so a burst of taps reads as more ripples, never a taller field.
+const knee = s => { const a = Math.abs(s); return a <= 1 ? s : Math.sign(s) * (1 + (CAP - 1) * Math.tanh((a - 1) / (CAP - 1))); };
+const heights = () => CELLS.map((c, n) => REST[n] + AMP * knee(SUM[n]));
 
 /* ---- pointer: tested against the pillars at rest (rule 01) -------------------- */
 function toView(e) {
