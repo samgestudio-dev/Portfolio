@@ -106,6 +106,11 @@ const lineFrag = /* glsl */`
   uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx, uReach, uCrest;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
   uniform float uHair, uMerge, uAlpha;
+  uniform float uPrint, uPrintT, uGrain, uGrainR; uniform vec3 uLight;
+  // grain for the screen print: a hash per pixel, and value noise for blotchy edges
+  float h12(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h12(i), h12(i + vec2(1.0, 0.0)), f.x), mix(h12(i + vec2(0.0, 1.0)), h12(i + vec2(1.0, 1.0)), f.x), f.y); }
   bool isFill(vec4 s) { float i = oid(s), f = s.b - i; return s.a > 0.0 && i > 1.5 && f > 0.3 && f < 0.6; }
   bool isHot(float i) { return i > uHotLo - 0.5 && i < uHotHi + 0.5; }
   vec3 nrm(vec4 s) { return vec3(s.xy, sqrt(max(0.0, 1.0 - dot(s.xy, s.xy)))); }
@@ -244,6 +249,21 @@ const lineFrag = /* glsl */`
       col = mix(col, mix(cEdge, cHi, hot), sil);
       ink = max(max(inner, part), sil);
     }
+    // Print: a silkscreen of a photograph, as Warhol printed his Marilyn. The light is
+    // thresholded into two tones, plate where it is lit and ink where it is not, with no
+    // tone between; the threshold is shaken by grain, so the edge of each black mass is
+    // ragged, and the hollows (the valley map: eyes, lips, the folds of the hair) print
+    // black too. The outline stays; the drawn folds give way to the masses.
+    if (uPrint > 0.5 && !cb) {
+      vec2 px = vUv / uTexel;
+      float lit = dot(nc, normalize(uLight)) * 0.75 + shade(c) * 0.25;
+      float jit = (vnoise(px / uGrainR) - 0.5) * 0.28 + (vnoise(px / (uGrainR * 0.25)) - 0.5) * 0.14 + (h12(px) - 0.5) * 0.10;
+      float ink = step(lit, uPrintT + jit * uGrain);
+      float hollow = smoothstep(uForm * 0.8, uForm * 1.6, V(vUv));
+      ink = max(ink, step(0.5, hollow + (h12(px + 7.1) - 0.5) * 0.6 * uGrain));
+      col = mix(cPlate, cEdge, ink);
+      col = mix(col, cEdge, max(sil, occ * (1.0 - step(0.5, nSil))));
+    }
     if (uDebug > 0.5 && !cb) col = mix(cPlate, cHi, clamp(V(vUv) * 8.0, 0.0, 1.0));
     gl_FragColor = vec4(col, uMerge > 0.5 ? ink : 1.0);   // the merge pass reads ink from alpha
     // transparent: off the solids only the outline's own ink is painted, so the picture
@@ -357,6 +377,7 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
     ...shared, tV: { value: rtV.texture }, uR: { value: 1.5 },
     uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHotLo: { value: -1 }, uHotHi: { value: -1 }, uWorldPx: { value: 0.001 },
     uForm: { value: 0.02 }, uFormOn: { value: 1 }, uReach: { value: 1 }, uCrest: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 }, uAlpha: { value: transparent ? 1 : 0 },
+    uPrint: { value: 0 }, uPrintT: { value: 0.3 }, uGrain: { value: 1 }, uGrainR: { value: 6 }, uLight: { value: new THREE.Vector3(-0.5, 0.55, 0.7) },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
     cPlate: { value: col('plate') }, cHi: { value: col('hi') }, cEdge: { value: col('edge') },
     cMid: { value: col('mid') }, cLo: { value: col('lo') },
@@ -413,6 +434,12 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
     setTheme(name) {
       Object.assign(theme, PALETTES[name]);
       for (const k of ['plate', 'hi', 'edge', 'mid', 'lo']) uniforms['c' + k[0].toUpperCase() + k.slice(1)].value.set(theme[k]);
+    },
+    // the silkscreen look: on, the threshold of light below which it prints black, how much
+    // grain shakes that edge and how coarse (px), and the light (view space: x right, y up, z to the eye)
+    setPrint({ on = true, threshold = 0.3, grain = 1, grainSize = 6, light = [-0.5, 0.55, 0.7] } = {}) {
+      uniforms.uPrint.value = on ? 1 : 0; uniforms.uPrintT.value = threshold; uniforms.uGrain.value = grain;
+      uniforms.uGrainR.value = grainSize * ratio; uniforms.uLight.value.set(...light);
     },
     // any five inks of one's own: { plate, hi, edge, mid, lo }
     setColors(c) {

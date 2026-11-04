@@ -85,9 +85,25 @@ export const at = (f, u, v, w) => [
   f.o[2] + f.U[2] * u + f.V[2] * v + f.W[2] * w,
 ];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+/* A light, for prints: while one is set, each prism also finds its walls that are seen
+   but turned away from it (the run of the ring whose outward normal faces the viewer and
+   not the light) and keeps that stretch of wall as one polygon, by its silhouette's path,
+   for whoever draws it to lay in ink. L: a unit vector in the world, toward the light.   */
+let LIGHT = null, SHADES = null;
+export function setLight(L) { LIGHT = L; SHADES = L ? new Map() : null; }
+export const shadeOf = sil => SHADES?.get(sil) || '';
 export function prism3(P, T, f, ring, inner, w0, w1) {
   const pr = w => ring.map(q => P(...at(f, q.u, q.v, w)));
   const sil = w0 === w1 ? poly(pr(w0)) : poly(hull(pr(w0).concat(pr(w1))));
+  if (LIGHT && w0 !== w1) {
+    const nrm = q => [f.U[0] * q.nu + f.V[0] * q.nv, f.U[1] * q.nu + f.V[1] * q.nv, f.U[2] * q.nu + f.V[2] * q.nv];
+    const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < -0.08; };
+    const r = run(ring, dark);
+    if (r.length > 1) {
+      const top = r.map(q => P(...at(f, q.u, q.v, w1))), bot = r.map(q => P(...at(f, q.u, q.v, w0))).reverse();
+      SHADES.set(sil, poly(top.concat(bot)));
+    }
+  }
   let crease = '';
   if (inner && w0 !== w1) {
     const cap = dot(f.W, T) >= 0 ? w1 : w0;
