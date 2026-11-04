@@ -346,10 +346,11 @@ async function switchTo(id) {
   gsap.set(still, { clipPath: FULL, x: 0, scale: 1 });
   gsap.set(room, { clipPath: R, x: shift, scale: s });
   const tl = gsap.timeline({ defaults: { ease: 'hair' } })
-    .to(still, { scale: s, clipPath: R, duration: 0.3, ease: 'power2.out' }, 0)
-    .to([still, room], { x: `-=${shift}`, duration: 0.52, ease: 'glide' }, 0.2)
-    .to(room, { scale: 1, clipPath: FULL, duration: 0.42 }, 0.64)
-    .from([...$('room-list').children], { y: 14, autoAlpha: 0, duration: 0.4, stagger: 0.04, clearProps: 'all' }, 0.62)
+    // it eases back from rest (never a jump), and is still settling as the slide takes it
+    .to(still, { scale: s, clipPath: R, duration: 0.42, ease: 'power2.inOut' }, 0)
+    .to([still, room], { x: `-=${shift}`, duration: 0.54, ease: 'glide' }, 0.26)
+    .to(room, { scale: 1, clipPath: FULL, duration: 0.44, ease: 'power2.inOut' }, 0.7)
+    .from([...$('room-list').children], { y: 14, autoAlpha: 0, duration: 0.4, stagger: 0.04, clearProps: 'all' }, 0.72)
     .add(() => {
       still.remove(); roomBack.hidden = true;
       gsap.set(room, { clearProps: 'transform' });
