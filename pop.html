@@ -43,9 +43,9 @@
       .strip::-webkit-scrollbar { display: none; }
       .strip.panning { cursor: grabbing; scroll-snap-type: none; }
       .strip.gliding { scroll-snap-type: none; }
-      /* moving between opened frames: the camera pulls back a little while it glides */
-      .strip { transition: transform calc(420ms * var(--slowk, 1)) var(--ease); }
-      .strip.pulled { transform: scale(.9); }
+      /* sideways, the strip is snapped by GSAP (main.js), never by the browser: a browser re-snap
+         after a layout change would jump to a stale frame */
+      @media (min-width: 861px) { .strip, .strip.panning { scroll-snap-type: none; } }
       .frame { position: relative; flex: 0 0 min(86vw, 1360px); height: 100%; scroll-snap-align: center; scroll-snap-stop: always; border-radius: 6px; background: var(--c, var(--paper)); overflow: hidden; isolation: isolate; }
       .frame.intro, .frame.outro { flex-basis: min(92vw, 1500px); }
       /* each frame knows where it stands (--p: -1 left … 0 centre … 1 right, --a = |p|):
@@ -160,15 +160,20 @@
       .counter { line-height: 1.25em; }
 
       /* ---- a frame, opened: it grows to the page ---- */
-      .room { position: fixed; inset: 0; z-index: 50; background: var(--c); color: var(--ink); display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1fr); overflow: hidden;
-        clip-path: inset(var(--t, 40%) var(--r, 40%) var(--b, 40%) var(--l, 40%) round 6px); visibility: hidden; transition: clip-path var(--rd, 760ms) var(--ease), visibility 0s var(--rd, 760ms); }
-      .room.on { clip-path: inset(0 0 0 0 round 0); visibility: visible; transition: clip-path var(--rd, 760ms) var(--ease), visibility 0s; }
+      /* (every move in and out of the room is a GSAP timeline in main.js: the clip, the dots, the shared things) */
+      .room { position: fixed; inset: 0; z-index: 50; background: var(--c); color: var(--ink); display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1fr); overflow: hidden; visibility: hidden; }
       /* the room's shared things travel from the frame: scaled from their top-left corner */
       #room-h, #room-lede, #room-num, .ghost, .obj-svg, .obj-canvas { transform-origin: 0 0; }
-      .ghost { position: absolute; z-index: 4; margin: 0; pointer-events: none; }
-      .ghost.sub { font-size: 15px; padding: 8px 14px; color: var(--ink-2); } .ghost.sub b { color: var(--ink); font-weight: 600; }
+      .ghost { position: absolute; z-index: 4; margin: 0; pointer-events: none; will-change: transform, opacity; }
+      .ghost b { color: var(--ink); font-weight: 600; }
+      #room-num { position: static; }
+      .room-body, .room-stage { z-index: 2; }
+      /* the caption's white box, travelling on its own while its words change inside it */
+      .ghost-box { position: absolute; z-index: 1; pointer-events: none; background: var(--white); border: var(--line) solid var(--ink); box-shadow: var(--shadow); }
+      .ghost.bare { background: none !important; border-color: transparent !important; box-shadow: none !important; z-index: 4; }
+      .box.bare { background: none; border-color: transparent; box-shadow: none; }
       .room.art { --c: var(--red); } .room.product { --c: var(--blue); } .room.system { --c: var(--yellow); } .room.motion { --c: var(--pink); }
-      .room::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle, rgb(20 20 18 / .2) 1.6px, transparent 2px) 0 0 / 11px 11px; -webkit-mask: radial-gradient(90% 90% at 100% 100%, #000 0%, transparent 62%); mask: radial-gradient(90% 90% at 100% 100%, #000 0%, transparent 62%); }
+      .room-dots { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; background: radial-gradient(circle, rgb(20 20 18 / .2) 1.6px, transparent 2px) 0 0 / 11px 11px; -webkit-mask: radial-gradient(90% 90% at 100% 100%, #000 0%, transparent 62%); mask: radial-gradient(90% 90% at 100% 100%, #000 0%, transparent 62%); }
       .room-top { position: absolute; z-index: 3; top: calc(30px + env(safe-area-inset-top, 0px)); left: max(32px, env(safe-area-inset-left, 0px)); right: max(32px, env(safe-area-inset-right, 0px)); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
       .btn { font: inherit; font-size: 14px; font-weight: 500; color: var(--ink); background: var(--white); border: var(--line) solid var(--ink); box-shadow: 4px 4px 0 var(--ink); padding: 8px 14px; cursor: pointer; min-height: 40px; display: inline-flex; align-items: center; gap: 10px; transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease); }
       .btn:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink); }
@@ -176,7 +181,7 @@
       .btn kbd { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
       .room-stage { position: relative; grid-column: 2; grid-row: 1; margin: 110px max(40px, env(safe-area-inset-right, 0px)) 100px 20px; }
       .room-stage .f-hint { top: -40px; left: 0; right: auto; }
-      .room.ready .room-stage .f-hint { opacity: 1; }
+      .room-stage .f-hint { opacity: 1; transform: none; }
       .room-body { position: relative; grid-column: 1; grid-row: 1; overflow-y: auto; padding: 118px 24px 110px max(40px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
       .room-body .box.big { font-size: clamp(36px, 4.6vw, 80px); padding: .08em .14em .1em; }
       .room-body .lede { font-size: 17px; line-height: 1.5; max-width: 42ch; padding: 12px 16px; }
@@ -190,17 +195,11 @@
       .row .n { font-family: var(--mono); font-size: 12px; color: var(--ink-3); } .row .t { font-weight: 600; font-size: 17px; } .row .k { font-size: 13px; color: var(--ink-2); }
       .row .go { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
       .row.link .go { color: var(--ink); }
-      /* what belongs to the room alone comes in after the frame has grown, and leaves first */
-      .room .stagger { opacity: 0; transform: translateY(10px); transition: opacity 140ms linear, transform 220ms var(--ease); }
-      .room.ready .stagger { opacity: 1; transform: none; transition: opacity var(--mid), transform var(--slow) var(--ease); transition-delay: calc(var(--i, 0) * 70ms); }
-      .room .step.stagger { transform: translateX(var(--from, 0)); }
-      .room.ready .step.stagger { transform: none; }
-      .room.ready .step.stagger:hover { transform: translate(-1px, -1px); }
-      .room.ready .step.stagger:active { transform: translate(2px, 2px); transition-delay: 0ms; }
+      #room-h, #room-lede, #room-num, .room-stage .f-hint, .step, .row { will-change: transform; }
       /* the way on to the next frame, at the page's two edges: each wears the colour of where it goes */
       .step { position: absolute; z-index: 3; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); gap: 12px; padding: 8px 14px 8px 12px; }
-      .step.prev { left: max(32px, env(safe-area-inset-left, 0px)); --from: -10px; }
-      .step.next { right: max(32px, env(safe-area-inset-right, 0px)); --from: 10px; padding: 8px 12px 8px 14px; }
+      .step.prev { left: max(32px, env(safe-area-inset-left, 0px)); }
+      .step.next { right: max(32px, env(safe-area-inset-right, 0px)); padding: 8px 12px 8px 14px; }
       .step::before { content: ""; width: 12px; height: 12px; border: 1.5px solid var(--ink); background: var(--c); border-radius: 2px; order: 1; }
       .step.prev::before { order: 0; margin-right: -2px; }
       .step.next::before { order: 2; margin-left: -2px; }
@@ -230,9 +229,7 @@
       }
       @media (prefers-reduced-motion: reduce) {
         .scroll-hint i { animation: none; }
-        .room, .room.on { transition: none; }
         .cap, .frame.live .cap { transition: none; opacity: 1; transform: none; }
-        .room .stagger { opacity: 1; transform: none; }
         .frame, .p-stage, .cap, .f-num { transform: none !important; translate: none !important; }
         .cap > * { opacity: 1; transform: none; transition: none; }
       }
@@ -270,18 +267,19 @@
     <nav class="film" id="film" aria-label="Frames"></nav>
 
     <div class="room" id="room" role="dialog" aria-modal="true" aria-labelledby="room-h" hidden>
+      <div class="room-dots" aria-hidden="true"></div>
       <div class="room-top">
-        <span class="f-num" id="room-num" style="position: static">01 · Art</span>
+        <span class="f-num" id="room-num">01 · Art</span>
         <button class="btn" id="room-close" aria-label="Close and go back">Back <kbd>esc</kbd></button>
       </div>
       <div class="room-body">
         <span class="box big" id="room-h"></span>
         <p class="box lede" id="room-lede"></p>
-        <div class="list stagger" id="room-list" style="--i:0"></div>
+        <div class="list" id="room-list"></div>
       </div>
-      <div class="room-stage" id="room-stage"><span class="f-hint stagger" style="--i:1">Drag to turn</span></div>
-      <a href="#" class="btn step prev stagger" id="room-prev" style="--i:2"></a>
-      <a href="#" class="btn step next stagger" id="room-next" style="--i:2"></a>
+      <div class="room-stage" id="room-stage"><span class="f-hint">Drag to turn</span></div>
+      <a href="#" class="btn step prev" id="room-prev"></a>
+      <a href="#" class="btn step next" id="room-next"></a>
     </div>
     <script type="module" src="./src/pop/main.js"></script>
   </body>

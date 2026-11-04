@@ -113,7 +113,8 @@ export function createObject(kind, { onOpen, colors }) {
   const layers = [0, 0, 0, 0, 0].map(() => ({ ...sp(0), due: Infinity, to: 0 }));
   const lift = [0, 0, 0, 0, 0].map(() => sp(0));      // mm, the gap the pointer opens
   const look = sp(0);                                   // David's turn toward the pointer
-  let hot = -1, spin = 0, spinV = 0;                    // the strip's movement turns them a little
+  let hot = -1, spin = 0, spinV = 0;
+  const dir = sp(1);                                    // which way David turns on his own: the strip's last way                    // the strip's movement turns them a little
   const LIFT = 6;
   const drawers = CABINET_REST.map(x => ({ ...sp(x), due: Infinity, to: x }));
   const answers = [], SUM = new Float64Array(CELLS.length);
@@ -145,7 +146,7 @@ export function createObject(kind, { onOpen, colors }) {
   // the pointer has left: everything it was answering goes home
   function away() { setHot(-1); look.t = 0; lastCell = -1; }
   // the strip moved by dpx: a turn that dies away, as a turntable nudged in passing
-  function nudge(dpx) { if (!reduced) spinV += dpx * 0.0016; }
+  function nudge(dpx) { if (reduced) return; spinV += dpx * 0.0016; if (Math.abs(dpx) > 0.5) dir.t = Math.sign(dpx); }
   // the drawing's shape, width over height: for moving it between stages without stretching
   function aspect() {
     if (svg) { const vb = svg.viewBox.baseVal; return vb.width / vb.height; }
@@ -195,7 +196,7 @@ export function createObject(kind, { onOpen, colors }) {
     let moved = false;
     const th = table.theta;
     if (o._th !== th) { o._th = th; moved = true; }
-    if (kind === 'art' && !reduced) { drift += dt * (o.hover ? 0.5 : 0.22); moved = true; if (look.x !== look.t || look.v) spring(look, dt); }
+    if (kind === 'art' && !reduced) { if (dir.x !== dir.t || dir.v) spring(dir, dt); drift += dt * (o.hover ? 0.5 : 0.22) * dir.x; moved = true; if (look.x !== look.t || look.v) spring(look, dt); }
     if (spinV) { spin += spinV * dt; spinV *= Math.exp(-2.6 * dt); if (Math.abs(spinV) < 1e-3) spinV = 0; moved = true; }
     if (kind === 'product') for (const L of lift) if (L.x !== L.t || L.v) { spring(L, dt); moved = true; }
     if (kind === 'product') for (const L of layers) { if (clock >= L.due) { L.t = L.to; L.due = Infinity; } if (L.x !== L.t || L.v) { spring(L, dt); moved = true; } }
