@@ -45,7 +45,7 @@ export const CAP = 1.2;                                // the ceiling stacked ki
 const ZF = o => ({ o, U: [1, 0, 0], V: [0, 1, 0], W: [0, 0, 1] });
 const O = [0, 0, 0];
 
-/* Everything with the pillars at heights hs, as [class, d, name] in paint order. hot: −1 or a cell. */
+/* Everything with the pillars at heights hs, as [class, d, name, opacity?] in paint order. hot: −1 or a cell. */
 export function atlas(P, T, hs, hot) {
   const out = [];
   // the plinth: a rounded slab with a narrow bevel, so its crease hugs the outer edge
@@ -57,20 +57,22 @@ export function atlas(P, T, hs, hot) {
   const bh = EXT / 2 + GAP;
   out.push(['cr', poly(rrect(-bh, -bh, bh, bh, R - (half - bh), 8).map(q => P(q.u, q.v, PB))), 'rim']);
   // graduated marks in the band between the opening and the bevel, on the cells' centre
-  // lines: dots that grow with k along the edge across, ticks that lengthen with c along
-  // the edge back. Each row sits on whichever of its two edges is nearer the viewer, so it
-  // is never left half hidden behind the pillars.
+  // lines: dots that grow with k along the edges across, ticks that lengthen with c along
+  // the edges back. A row shows as its edge turns toward the viewer and fades as it turns
+  // away behind the pillars, smoothly with the turn, so no row ever jumps.
   const band = (bh + half - BEV) / 2, room = half - BEV - bh;
-  const sy = T[1] >= 0 ? 1 : -1, sx = T[0] >= 0 ? 1 : -1;
-  let dots = '', ticks = '';
-  for (let n = 0; n < N; n++) {
-    const at = X0 + (n + 0.5) * CELL, f = n / (N - 1);
-    const r = room * (0.08 + 0.17 * f);
-    dots += poly(circ(at, sy * band, r, 16).map(q => P(q.u, q.v, PB)));
-    const L = room * (0.2 + 0.5 * f);
-    ticks += `M${P(sx * (band - L / 2), at, PB).join(' ')}L${P(sx * (band + L / 2), at, PB).join(' ')}`;
+  const tl = Math.hypot(T[0], T[1]) || 1;
+  const show = f => { const t = Math.min(1, Math.max(0, (f / tl + 0.3) / 0.6)); return Math.round(t * t * (3 - 2 * t) * 100) / 100; };
+  for (const s of [-1, 1]) {
+    let dots = '', ticks = '';
+    for (let n = 0; n < N; n++) {
+      const at = X0 + (n + 0.5) * CELL, f = n / (N - 1);
+      dots += poly(circ(at, s * band, room * (0.08 + 0.17 * f), 16).map(q => P(q.u, q.v, PB)));
+      const L = room * (0.2 + 0.5 * f);
+      ticks += `M${P(s * (band - L / 2), at, PB).join(' ')}L${P(s * (band + L / 2), at, PB).join(' ')}`;
+    }
+    out.push(['dot', dots, `k-marks${s}`, show(s * T[1])], ['mk', ticks, `c-marks${s}`, show(s * T[0])]);
   }
-  out.push(['dot', dots, 'k-marks'], ['mk', ticks, 'c-marks']);
 
   // the pillars, far to near; the chosen one carries a 3 × 3 mark of dots on its lid
   const order = CELLS.map((c, n) => ({ c, n, key: T[0] * c.cx + T[1] * c.cy })).sort((a, b) => a.key - b.key);
