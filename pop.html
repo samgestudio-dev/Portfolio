@@ -178,6 +178,8 @@
       /* behind the pages while one category gives way to the next: the strip's black */
       .room-back { position: fixed; inset: 0; z-index: 49; background: var(--ink); }
       .room.still { pointer-events: none; }
+      /* the buttons that travel from the page's chrome: their contents fade on --ci, the box stays */
+      .step > *, .step::before, #room-close > * { opacity: var(--ci, 1); }
       .room-dots { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; background: radial-gradient(circle, rgb(20 20 18 / .2) 1.6px, transparent 2px) 0 0 / 11px 11px; -webkit-mask: radial-gradient(90% 90% at 100% 100%, #000 0%, transparent 62%); mask: radial-gradient(90% 90% at 100% 100%, #000 0%, transparent 62%); }
       .room-top { position: absolute; z-index: 3; top: calc(30px + env(safe-area-inset-top, 0px)); left: max(32px, env(safe-area-inset-left, 0px)); right: max(32px, env(safe-area-inset-right, 0px)); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
       .btn { font: inherit; font-size: 14px; font-weight: 500; color: var(--ink); background: var(--white); border: var(--line) solid var(--ink); box-shadow: 4px 4px 0 var(--ink); padding: 8px 14px; cursor: pointer; min-height: 40px; display: inline-flex; align-items: center; gap: 10px; transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease); }
@@ -187,6 +189,8 @@
       .room-stage { position: relative; grid-column: 2; grid-row: 1; margin: 110px max(40px, env(safe-area-inset-right, 0px)) 100px 20px; }
       .room-stage .f-hint { top: -40px; left: 0; right: auto; }
       .room-stage .f-hint { opacity: 1; transform: none; }
+      /* David on his page runs off it, to the page's top, foot and right edge, never cut at the stage */
+      @media (min-width: 861px) { .room.art .room-stage .obj-canvas { top: -110px; width: calc(100% + max(40px, env(safe-area-inset-right, 0px))); height: calc(100% + 210px); } }
       .room-body { position: relative; grid-column: 1; grid-row: 1; overflow-y: auto; padding: 118px 24px 110px max(40px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
       .room-body .box.big { font-size: clamp(36px, 4.6vw, 80px); padding: .08em .14em .1em; }
       .room-body .lede { font-size: 17px; line-height: 1.5; max-width: 42ch; padding: 12px 16px; }
@@ -276,7 +280,7 @@
       <div class="room-dots" aria-hidden="true"></div>
       <div class="room-top">
         <span class="f-num" id="room-num">01 · Art</span>
-        <button class="btn" id="room-close" aria-label="Close and go back">Back <kbd>esc</kbd></button>
+        <button class="btn" id="room-close" aria-label="Close and go back"><span>Back</span> <kbd>esc</kbd></button>
       </div>
       <div class="room-body">
         <span class="box big" id="room-h"></span>

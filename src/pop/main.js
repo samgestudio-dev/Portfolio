@@ -100,7 +100,8 @@ FRAMES.forEach((f, i) => {
   const b = document.createElement('button');
   b.setAttribute('aria-label', f.getAttribute('aria-label').split('.')[0]);
   const d = DISC.find(x => x.frame === f);
-  if (d) b.style.setProperty('--c', d.c); else if (f.classList.contains('outro')) b.style.setProperty('--c', '#1b1b19');
+  // every chip names its own colour, so a copy of the strip shown inside a coloured page keeps it
+  b.style.setProperty('--c', d ? d.c : f.classList.contains('outro') ? '#1b1b19' : 'var(--paper)');
   b.addEventListener('click', () => goTo(i));
   film.appendChild(b);
 });
@@ -162,13 +163,16 @@ function pageFrom(i0, v = 0) {
   return Math.max(0, Math.min(FRAMES.length - 1, to));
 }
 // the wheel: a mouse's notch is a page; a trackpad's run is followed, then paged when it stops
-let wheel0 = null, settleT = 0, notchT = 0;
+let wheel0 = null, settleT = 0, notchT = 0, lastWheel = 0;
 strip.addEventListener('wheel', e => {
   if (current || e.ctrlKey || vertical()) return;
   const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
   if (e.target.closest('.p-stage') && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // a sideways swipe on an object turns it
   e.preventDefault();
-  const notch = e.deltaMode !== 0 || (Math.abs(d) >= 60 && Number.isInteger(d) && e.deltaX === 0);
+  // a mouse's notch: lines, or a big round step arriving out of quiet; a trackpad's run starts
+  // small and keeps coming, so it is followed (and a fast swipe's big steps mid-run are too)
+  const now = performance.now(), quiet = now - lastWheel > 120; lastWheel = now;
+  const notch = wheel0 === null && (e.deltaMode !== 0 || (quiet && Math.abs(d) >= 50 && Number.isInteger(d) && e.deltaX === 0));
   if (notch) {
     if (performance.now() < notchT) return;                    // one page a notch, not one a tick
     notchT = performance.now() + 380;
@@ -313,7 +317,12 @@ function place(want, at, el, scale = want.w / at.w) {
   return { x: want.x - el.x - (at.x - el.x) * scale, y: want.y - el.y - (at.y - el.y) * scale, scale, transformOrigin: '0 0' };
 }
 // a stand-in for something the room does not have: a copy, drawn where the original stands
-const KEEP = ['font', 'fontVariationSettings', 'letterSpacing', 'textTransform', 'color', 'background', 'padding', 'border', 'borderRadius', 'boxShadow', 'lineHeight', 'display', 'alignItems', 'gap'];
+// (longhands only: a shorthand read back from a computed style can come back empty — Safari does)
+const KEEP = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariationSettings', 'lineHeight', 'letterSpacing', 'textTransform', 'whiteSpace', 'color',
+  'backgroundColor', 'backgroundImage', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderTopStyle', 'borderRightStyle', 'borderBottomStyle', 'borderLeftStyle',
+  'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor', 'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius',
+  'boxShadow', 'display', 'flexDirection', 'alignItems', 'justifyContent', 'gap', 'boxSizing'];
 function ghostOf(el) {
   const g = el.cloneNode(true), cs = getComputedStyle(el), r = R(el);
   for (const k of KEEP) g.style[k] = cs[k];
@@ -333,6 +342,16 @@ function boxAt(r) {
 // a way on): the box alone travels, its hard shadow settling to the button's
 const INK = '#141412';
 function chromeBox(r, sh) { const b = boxAt(r); gsap.set(b, { boxShadow: `${sh}px ${sh}px 0 ${INK}`, zIndex: 3 }); return b; }
+// a page button lifted out of its place to travel as a box: fixed on the page at rect r with a
+// hard shadow of sh px, its contents at ci (0 hidden); land() puts it back in its place
+const zoomOf = d => (d._zoom ||= { z: 0 });
+function fly(el, r, sh, ci = 0) {
+  gsap.set(el, { position: 'fixed', left: r.x, top: r.y, right: 'auto', bottom: 'auto', width: r.w, height: r.h, margin: 0, x: 0, y: 0, zIndex: 5, transition: 'none',
+    boxShadow: `${sh}px ${sh}px 0 ${INK}`, '--ci': ci, autoAlpha: 1 });
+}
+function land(...els) {
+  for (const el of els) { gsap.set(el, { clearProps: 'position,left,top,right,bottom,width,height,margin,zIndex,transition,boxShadow,clipPath,transform,opacity,visibility' }); el.style.removeProperty('--ci'); }
+}
 // the film-strip's box, split in two: each half cut at the strip's middle until it has left it,
 // so while they overlap they read as one box (no border or shadow of one over the other),
 // stretching, then parting cleanly into two
@@ -411,12 +430,12 @@ async function switchTo(id) {
   pages.push({ el: room, k: dir });
   roomBack.hidden = false;
   // the room becomes the next one underneath: the old object home to its frame, the new one in
-  from.obj.open = false; from.obj.setHover(false); from.obj.mount(from.stage);
+  from.obj.open = false; from.obj.setHover(false); from.obj.mount(from.stage); from.obj.setZoom(0);
   from.frame.classList.remove('away'); wake(from);
   current = id;
   room.className = `room ${id}`;
   fillRoom(to);
-  to.obj.setHover(false); to.obj.mount(roomStage); to.obj.open = true;
+  to.obj.setHover(false); to.obj.mount(roomStage); to.obj.open = true; to.obj.setZoom(1);
   to.frame.classList.add('away');
   gsap.set([to.obj.el, ...SHARED()], { clearProps: 'all' });
   // the strip, unseen beneath, moves to the next frame, so Back closes onto it
@@ -462,7 +481,7 @@ function grow(id, { replace = false } = {}) {
   room.hidden = false;
   gsap.set(room, { autoAlpha: 1, clipPath: inset(fr) });
   gsap.set(roomDots, { left: fr.x, top: fr.y, width: fr.w, height: fr.h });
-  const A = d.obj.aspect(), stage = R(roomStage), h = R(roomH), lede = R(roomLede), num = R(roomNum), hint = R(roomHint), bk = R(back), pv = R(prevB), nx = R(nextB);
+  const A = d.obj.aspect(), stage = R(d.obj.el), h = R(roomH), lede = R(roomLede), num = R(roomNum), hint = R(roomHint), bk = R(back), pv = R(prevB), nx = R(nextB);
   const sF = fs(d.subEl) / fs(roomLede);
   const rows = [...$('room-list').children];
   gSub.classList.add('bare'); roomLede.classList.add('bare');
@@ -471,18 +490,20 @@ function grow(id, { replace = false } = {}) {
   // the chrome's stand-ins: the counter and the film-strip as they are (their contents fading),
   // and their white boxes, which travel: the counter's to Back, the film-strip's, split in two,
   // to the two ways on at the page's edges
-  // (the stand-ins bare: their contents only; the travelling boxes are the boxes)
+  // (the stand-ins bare: the counter's and the film-strip's contents only, fading where they are)
   const gCount = ghostOf(counter), gFilm = ghostOf(film);
   gCount.classList.add('bare'); gFilm.classList.add('bare');
-  const bBack = chromeBox(first.counter, 6), bPrev = chromeBox(first.film, 6), bNext = chromeBox(first.film, 6);
   gsap.set([gCount, gFilm], { zIndex: 4 });
-  gsap.set([back, prevB, nextB], { autoAlpha: 0 });
-  const cutOpen = splitClip(bPrev, bNext, first.film.x + first.film.w / 2);
+  // the buttons themselves travel, empty, from the counter's and the film-strip's boxes
+  fly(back, first.counter, 6); fly(prevB, first.film, 6); fly(nextB, first.film, 6);
+  const cutOpen = splitClip(prevB, nextB, first.film.x + first.film.w / 2);
 
   const T = T_OPEN, tl = gsap.timeline({ defaults: { duration: T, ease: 'morph' } });
   tl.addLabel('grow', 0)
     // the ground: the frame's colour opens to the page, its dots go with it
     .to(room, { clipPath: FULL }, 'grow')
+    // David: the camera comes in from all of him to his head as his frame grows
+    .fromTo(zoomOf(d), { z: 0 }, { z: d.id === 'art' ? 1 : 0, onUpdate() { d.obj.setZoom(this.targets()[0].z); } }, 'grow')
     .to(roomDots, { left: 0, top: 0, width: innerWidth, height: innerHeight }, 'grow')
     // the object, from where it stood
     .from(d.obj.el, { ...place(fit(first.stage, A), fit(stage, A), stage) }, 'grow')
@@ -499,17 +520,18 @@ function grow(id, { replace = false } = {}) {
     // the chrome hands over
     .to([topBar, film], { autoAlpha: 0, duration: 0.01 }, 'grow')
     .to([gCount, gFilm], { autoAlpha: 0, duration: 0.2, ease: 'power1.in' }, 'grow')
-    .to(bBack, { left: bk.x, top: bk.y, width: bk.w, height: bk.h, boxShadow: `4px 4px 0 ${INK}` }, 'grow+=0.04')
-    .to(bPrev, { left: pv.x, top: pv.y, width: pv.w, height: pv.h, boxShadow: `4px 4px 0 ${INK}`, onUpdate: cutOpen }, 'grow+=0.06')
-    .to(bNext, { left: nx.x, top: nx.y, width: nx.w, height: nx.h, boxShadow: `4px 4px 0 ${INK}`, onUpdate: cutOpen }, 'grow+=0.06')
-    // their words come in as the boxes settle
-    .to([back, prevB, nextB], { autoAlpha: 1, duration: 0.3, ease: 'power1.out', stagger: 0.03 }, `grow+=${T * 0.62}`)
+    .to(back, { left: bk.x, top: bk.y, width: bk.w, height: bk.h, boxShadow: `4px 4px 0 ${INK}` }, 'grow+=0.04')
+    .to(prevB, { left: pv.x, top: pv.y, width: pv.w, height: pv.h, boxShadow: `4px 4px 0 ${INK}`, onUpdate: cutOpen }, 'grow+=0.04')
+    .to(nextB, { left: nx.x, top: nx.y, width: nx.w, height: nx.h, boxShadow: `4px 4px 0 ${INK}`, onUpdate: cutOpen }, 'grow+=0.04')
+    // their contents come up inside them as they near home, travelling with them
+    .to([back, prevB, nextB], { '--ci': 1, duration: 0.34, ease: 'power1.out', stagger: 0.03 }, `grow+=${T * 0.56}`)
     // and what belongs to the page alone comes in last, one row at a time
     .from(rows, { y: 22, autoAlpha: 0, duration: 0.6, stagger: 0.06, ease: 'power3.out' }, `grow+=${T * 0.66}`)
     .add(() => {
-      for (const g of [gSub, gOpen, bx, gCount, gFilm, bBack, bPrev, bNext]) g.remove();
+      for (const g of [gSub, gOpen, bx, gCount, gFilm]) g.remove();
       roomLede.classList.remove('bare'); d.obj.setHover(true);
-      gsap.set([back, prevB, nextB, roomHint, ...rows], { clearProps: 'transform,opacity,visibility' });
+      land(back, prevB, nextB);
+      gsap.set([roomHint, ...rows], { clearProps: 'transform,opacity,visibility' });
     });
   if (replace) history.replaceState(null, '', '#' + id);
   else if (location.hash !== '#' + id) history.pushState(null, '', '#' + id);
@@ -522,7 +544,7 @@ function shrink({ quiet = false, dur = T_CLOSE } = {}) {
   const id = current, d = byId[id];
   const fr = R(d.frame);
   const to = { stage: R(d.stage), big: R(d.bigEl), sub: R(d.subEl), num: R(d.numEl), hint: R(d.frame.querySelector('.f-hint')), counter: R(counter), film: R(film) };
-  const A = d.obj.aspect(), stage = R(roomStage), lede = R(roomLede), num = R(roomNum), hint = R(roomHint), bk = R(back), pv = R(prevB), nx = R(nextB);
+  const A = d.obj.aspect(), stage = R(d.obj.el), lede = R(roomLede), num = R(roomNum), hint = R(roomHint), bk = R(back), pv = R(prevB), nx = R(nextB);
   const sF = fs(d.subEl) / fs(roomLede);
   const gSub = ghostOf(d.subEl);
   gSub.classList.add('bare');
@@ -532,20 +554,21 @@ function shrink({ quiet = false, dur = T_CLOSE } = {}) {
 
   // the chrome's way home, the same film backwards: the buttons' words go, their white boxes
   // travel back and become the counter and the film-strip again, whose contents come back in
-  const bBack = chromeBox(bk, 4), bPrev = chromeBox(pv, 4), bNext = chromeBox(nx, 4);
+  fly(back, bk, 4, 1); fly(prevB, pv, 4, 1); fly(nextB, nx, 4, 1);
   const gCount = ghostOf(counter), gFilm = ghostOf(film);
   gCount.classList.add('bare'); gFilm.classList.add('bare');
   gsap.set([gCount, gFilm], { zIndex: 4, autoAlpha: 0 });
-  const cutClose = splitClip(bPrev, bNext, to.film.x + to.film.w / 2);
+  const cutClose = splitClip(prevB, nextB, to.film.x + to.film.w / 2);
 
   const tl = gsap.timeline({ defaults: { duration: dur, ease: 'morph' } });
   tl.addLabel('shrink', 0)
     .to([...$('room-list').children].reverse(), { y: 10, autoAlpha: 0, duration: 0.18, stagger: 0.025, ease: 'power1.in' }, 'shrink')
-    .to([back, prevB, nextB], { autoAlpha: 0, duration: 0.14, ease: 'power1.in' }, 'shrink')
-    .to(bBack, { left: to.counter.x, top: to.counter.y, width: to.counter.w, height: to.counter.h, boxShadow: `6px 6px 0 ${INK}` }, 'shrink+=0.04')
-    .to([bPrev, bNext], { left: to.film.x, top: to.film.y, width: to.film.w, height: to.film.h, boxShadow: `6px 6px 0 ${INK}`, onUpdate: cutClose }, 'shrink+=0.04')
+    .to([back, prevB, nextB], { '--ci': 0, duration: 0.16, ease: 'power1.in' }, 'shrink')
+    .to(back, { left: to.counter.x, top: to.counter.y, width: to.counter.w, height: to.counter.h, boxShadow: `6px 6px 0 ${INK}` }, 'shrink+=0.04')
+    .to([prevB, nextB], { left: to.film.x, top: to.film.y, width: to.film.w, height: to.film.h, boxShadow: `6px 6px 0 ${INK}`, onUpdate: cutClose }, 'shrink+=0.04')
     .to([gCount, gFilm], { autoAlpha: 1, duration: 0.24, ease: 'power1.out' }, `shrink+=${dur * 0.68}`)
     .to(room, { clipPath: inset(fr) }, 'shrink+=0.06')
+    .fromTo(zoomOf(d), { z: d.id === 'art' ? 1 : 0 }, { z: 0, onUpdate() { d.obj.setZoom(this.targets()[0].z); } }, 'shrink+=0.06')
     .to(roomDots, { left: fr.x, top: fr.y, width: fr.w, height: fr.h }, 'shrink+=0.06')
     .to(d.obj.el, { ...place(fit(to.stage, A), fit(stage, A), stage) }, 'shrink+=0.06')
     .to(roomH, { ...Flip.fit(roomH, d.bigEl, { scale: true, getVars: true }), transformOrigin: '0 0' }, 'shrink+=0.06')
@@ -564,7 +587,8 @@ function shrink({ quiet = false, dur = T_CLOSE } = {}) {
       d.frame.classList.remove('away');
       gsap.from(d.frame.querySelector('.cap .open'), { y: 8, autoAlpha: 0, duration: 0.4, ease: 'power2.out', clearProps: 'all' });
       gSub.remove(); bx.remove(); roomLede.classList.remove('bare');
-      for (const g of [bBack, bPrev, bNext, gCount, gFilm]) g.remove();
+      for (const g of [gCount, gFilm]) g.remove();
+      land(back, prevB, nextB);
       gsap.set([topBar, film], { autoAlpha: 1 });
       current = null;
       room.hidden = true;

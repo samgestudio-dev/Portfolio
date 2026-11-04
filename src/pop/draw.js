@@ -1,5 +1,5 @@
-import { prism3, flat, at, seg, inside } from '../lib/iso.js';
-import { buildParts, LAYERS, SCREEN_FRONT, H as PH, W as PW, R as PR } from '../phone/scene.js';
+import { prism3, flat, at, seg, inside, hull } from '../lib/iso.js';
+import { buildParts, LAYERS, SCREEN_FRONT, OUTLINE, H as PH, W as PW, R as PR } from '../phone/scene.js';
 import { carcass, drawer, frontAt, DRAWERS, MAX, W as CW, D as CD, H as CH, FT } from '../cabinet/scene.js';
 import { atlas, restHeights, restHull, CELLS, EXTENT as AEXT } from '../atlas/scene.js';
 
@@ -33,6 +33,19 @@ const LAYER_MID = LAYERS.map((L, i) => {
   return [0, 1, 2].map(k => cs.reduce((a, c) => a + c[k], 0) / (cs.length || 1));
 });
 // the layers' middles on the drawing where they stand now: for picking the one under the pointer
+// the layer the point is on, as seen: each layer's outline swept through its span (the hull of its
+// back and front faces), tested nearest first, so the one in front wins where layers overlap
+export function phoneLayerAt(P, T, o, e, pt) {
+  const ys = layerYs(o, e);
+  const order = LAYERS.map((L, i) => ({ i, k: T[1] * (ys[i] + (L.ui ? 0 : L.y)) })).sort((a, b) => b.k - a.k);
+  for (const { i } of order) {
+    if (i === 1 && o[1] < 0.04) continue;
+    const L = LAYERS[i], y0 = ys[i] + L.span[0], y1 = ys[i] + L.span[1];
+    const pts = OUTLINE.map(q => P(q.u, y0, q.v)).concat(y1 !== y0 ? OUTLINE.map(q => P(q.u, y1, q.v)) : []);
+    if (inside(pt, y1 !== y0 ? hull(pts) : pts)) return i;
+  }
+  return -1;
+}
 export const phoneMids = (P, o, e) => layerYs(o, e).map((y, i) => P(LAYER_MID[i][0], LAYER_MID[i][1] + y, LAYER_MID[i][2]));
 export function phone(P, T, o, e, hot = -1) {
   const key = (x, y) => T[0] * x + T[1] * y;

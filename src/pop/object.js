@@ -5,7 +5,7 @@ const davidKit = () => Promise.all([import('three'), import('three/examples/jsm/
 const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 700 }) : setTimeout(f, 120));
 import { Cam, proj, toward, circ, inside, setLight, shadeOf } from '../lib/iso.js';
 import { fillKeyed } from '../lib/keyed-fill.js';
-import { phone, phoneMids, cabinet, drawerAt, CABINET_REST, CABINET_OUT, CABINET_MAX, atlas, restHull, CELLS, ATLAS_REST, REACH } from './draw.js';
+import { phone, phoneMids, phoneLayerAt, cabinet, drawerAt, CABINET_REST, CABINET_OUT, CABINET_MAX, atlas, restHull, CELLS, ATLAS_REST, REACH } from './draw.js';
 import { AMP, CAP } from '../atlas/scene.js';
 
 /* One object on the pop page: it lives in a stage element (a comic panel, or the full
@@ -50,6 +50,7 @@ export function createObject(kind, { onOpen, colors }) {
   const table = createTurntable({ tour: false });
   const o = { kind, table, hover: false, dirty: true, el: null, stage: null, open: false };
   let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0, pxPerUnit = 1, dotPitch = 1.2;
+  let head = null, zoom = 0, vw = 1, vh = 1, bufW = 1;
   
 
   /* ---- the drawing surface ---- */
@@ -66,7 +67,8 @@ export function createObject(kind, { onOpen, colors }) {
       pass.setLook({ detail: 0.55, stroke: 1.6, muscle: 0.45 });
       scene3 = new THREE.Scene(); spinMesh = new THREE.Group(); scene3.add(spinMesh);
       cam3 = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 20);
-      const az = Math.PI / 4, el = Math.atan(0.5), dist = 6, target = new THREE.Vector3(0, 0.5, 0);
+      // a touch from below (about 5° up at him), as a statue is seen from the floor it stands on
+      const az = Math.PI / 4, el = -0.085, dist = 6, target = new THREE.Vector3(0, 0.5, 0);
       cam3.position.set(Math.sin(az) * Math.cos(el) * dist, target.y + Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist);
       cam3.lookAt(target); cam3.updateMatrixWorld();
       // the frame: his head, his rock, at any turn (rule 03)
@@ -87,6 +89,13 @@ export function createObject(kind, { onOpen, colors }) {
         gltf.scene.traverse(m => { if (m.isMesh && !geo) { m.updateWorldMatrix(true, false); geo = m.geometry.clone().applyMatrix4(m.matrixWorld); } });
         if (!geo.attributes.normal) geo.computeVertexNormals();
         spinMesh.add(new THREE.Mesh(geo, pass.material(1, { form: !!geo.attributes._formnormal })));
+        // where his head is, in his own units: the middle of everything above the chin
+        const pos = geo.attributes.position; geo.computeBoundingBox();
+        const top = geo.boundingBox.max.y;
+        let n = 0, x = 0, z = 0, y0 = Infinity, y1 = -Infinity;
+        for (let k = 0; k < pos.count; k++) { const y = pos.getY(k); if (y > top - 0.11) { x += pos.getX(k); z += pos.getZ(k); n++; y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }
+        head = { x: x / n, z: z / n, y: (y0 + y1) / 2 - 0.012, r: 0.075 };
+        frameCam();
         o.dirty = true; o.loaded = true;
       });
     });
@@ -170,13 +179,17 @@ export function createObject(kind, { onOpen, colors }) {
     setAz();
     const P = proj(C_), T = toward(C_);
     if (kind === 'product') {
-      // the layer whose middle is nearest, once they stand apart (tested where they are headed)
+      // the layer under the pointer as drawn (front-most where they overlap), once they stand
+      // apart, tested where they are headed; and only taken if it would still be under the
+      // pointer once its own gap had opened (else the gap moving would hand it straight back)
       const apart = layers.reduce((a, L) => a + L.to, 0) / layers.length;
       if (apart < 0.5) return setHot(-1);
-      const mids = phoneMids(P, layers.map(L => L.to), lift.map(L => L.t));
-      let best = -1, bd = Infinity;
-      mids.forEach((m, i) => { if (i === 1 && layers[1].to < 0.04) return; const dd = Math.hypot(m[0] - q.x, m[1] - q.y); if (dd < bd) { bd = dd; best = i; } });
-      return setHot(best);
+      const o_ = layers.map(L => L.to), liftFor = h => lift.map((_, i) => (h < 0 ? 0 : i > h ? LIFT : i === h ? LIFT / 2 : 0));
+      const k = phoneLayerAt(P, T, o_, liftFor(hot), [q.x, q.y]);
+      if (k === hot) return;
+      if (k < 0) return setHot(-1);
+      if (phoneLayerAt(P, T, o_, liftFor(k), [q.x, q.y]) === k) setHot(k);
+      return;
     }
     if (kind === 'system') {
       // the drawer whose front holds the pointer, tested where each is headed (rule 01)
@@ -196,7 +209,9 @@ export function createObject(kind, { onOpen, colors }) {
     let moved = false;
     const th = table.theta;
     if (o._th !== th) { o._th = th; moved = true; }
-    if (kind === 'art' && !reduced) { if (dir.x !== dir.t || dir.v) spring(dir, dt); drift += dt * (o.hover ? 0.5 : 0.22) * dir.x; moved = true; if (look.x !== look.t || look.v) spring(look, dt); }
+    // every object turns slowly on its own, the way the strip last moved (David a little faster when hovered)
+    if (!reduced) { if (dir.x !== dir.t || dir.v) spring(dir, dt); drift += dt * (kind === 'art' ? (o.hover ? 0.5 : 0.22) : 0.16) * dir.x; moved = true; }
+    if (kind === 'art' && !reduced && (look.x !== look.t || look.v)) spring(look, dt);
     if (spinV) { spin += spinV * dt; spinV *= Math.exp(-2.6 * dt); if (Math.abs(spinV) < 1e-3) spinV = 0; moved = true; }
     if (kind === 'product') for (const L of lift) if (L.x !== L.t || L.v) { spring(L, dt); moved = true; }
     if (kind === 'product') for (const L of layers) { if (clock >= L.due) { L.t = L.to; L.due = Infinity; } if (L.x !== L.t || L.v) { spring(L, dt); moved = true; } }
@@ -222,6 +237,8 @@ export function createObject(kind, { onOpen, colors }) {
       moved = true;
     }
     if (moved) o.dirty = true;
+    // the object turns under a pointer that has stopped: ask again what is under it, now and then
+    if (moved && o._pt && o.hover && (kind === 'product' || kind === 'system') && (o._tick = (o._tick || 0) + 1) % 4 === 0) pointer(o._pt);
   }
 
   const knee = s => { const a = Math.abs(s); return a <= 1 ? s : Math.sign(s) * (1 + (CAP - 1) * Math.tanh((a - 1) / (CAP - 1))); };
@@ -230,6 +247,7 @@ export function createObject(kind, { onOpen, colors }) {
     o.dirty = false;
     if (kind === 'art') {
       if (!pass) return;
+      if (zoom > 0) frameCam();
       spinMesh.rotation.y = table.theta + drift + spin + look.x;
       pass.render(scene3, cam3, -1);
       return;
@@ -284,21 +302,42 @@ export function createObject(kind, { onOpen, colors }) {
       svg.querySelector('feDisplacementMap').setAttribute('scale', (2.6 / kRoom).toFixed(3));
     }
     if (!o.stage || kind !== 'art' || !renderer) { o.dirty = true; return; }
-    const r = o.stage.getBoundingClientRect(), w = Math.max(1, r.width), h = Math.max(1, r.height);
+    // his canvas's own size (on his page it reaches past the stage), as laid out, transforms aside
+    vw = Math.max(1, canvas.offsetWidth); vh = Math.max(1, canvas.offsetHeight);
     const dpr = Math.min(window.devicePixelRatio || 1, 2) * 1.25;
-    renderer.setPixelRatio(dpr); renderer.setSize(w, h, false);
-    const size = davidExtent.getSize(new THREE.Vector2()), c = davidExtent.getCenter(new THREE.Vector2());
-    const s = Math.min(w / size.x, h / size.y) * 0.92;
-    cam3.left = c.x - w / 2 / s; cam3.right = c.x + w / 2 / s; cam3.top = c.y + h / 2 / s; cam3.bottom = c.y - h / 2 / s;
-    cam3.updateProjectionMatrix();
+    renderer.setPixelRatio(dpr); renderer.setSize(vw, vh, false);
     const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
     pass.setSize(buf.x, buf.y, renderer.getPixelRatio());
-    pass.setScale((cam3.right - cam3.left) / buf.x);
+    bufW = buf.x;
     // seen big, look for folds over a longer reach so his face keeps its lines
     pass.setReach(Math.min(3, Math.max(1, Math.sqrt(buf.y / 900))), 0.5);
     pass.setPrint(PRINT);
+    frameCam();
+  }
+  /* David's framing, between all of him (zoom 0, as in his frame) and his head alone (zoom 1,
+     as on his opened page): the middle and the size eased between the two; the head followed
+     as he turns, since it is not on his axis */
+  function frameCam() {
+    if (!renderer || !davidExtent) return;
+    const bs = davidExtent.getSize(new THREE.Vector2()), bc = davidExtent.getCenter(new THREE.Vector2());
+    let cx = bc.x, cy = bc.y, sx = bs.x, sy = bs.y;
+    if (zoom > 0 && head) {
+      const a = table.theta + drift + spin + look.x, ca = Math.cos(a), sa = Math.sin(a);
+      const hp = new THREE.Vector3(head.x * ca + head.z * sa, head.y, -head.x * sa + head.z * ca).applyMatrix4(cam3.matrixWorldInverse);
+      const hs = head.r * 2.3, t = zoom;
+      // the size eased on a log scale, so the push in feels even all the way
+      sx = Math.exp(Math.log(sx) + (Math.log(hs) - Math.log(sx)) * t); sy = Math.exp(Math.log(sy) + (Math.log(hs) - Math.log(sy)) * t);
+      // his head high on the page (its middle about 40% down), the bust running on below
+      const s0 = Math.min(vw / sx, vh / sy) * 0.92, up = (0.5 - 0.4) * (vh / s0);
+      cx += (hp.x - cx) * t; cy += (hp.y - up - cy) * t;
+    }
+    const s = Math.min(vw / sx, vh / sy) * 0.92;
+    cam3.left = cx - vw / 2 / s; cam3.right = cx + vw / 2 / s; cam3.top = cy + vh / 2 / s; cam3.bottom = cy - vh / 2 / s;
+    cam3.updateProjectionMatrix();
+    pass.setScale((cam3.right - cam3.left) / bufW);
     o.dirty = true;
   }
+  function setZoom(z) { if (kind !== 'art' || z === zoom) return; zoom = z; frameCam(); }
 
   /* ---- hands: drag turns it, a tap opens it ---- */
   let down = null, dragging = false, lastX = 0, lastT = 0;
@@ -310,7 +349,7 @@ export function createObject(kind, { onOpen, colors }) {
     });
     target.addEventListener('pointermove', e => {
       if (!target.contains(o.el)) return;
-      if (e.pointerType === 'mouse' && !dragging) { setHover(true); pointer(e); }
+      if (e.pointerType === 'mouse' && !dragging) { setHover(true); pointer(e); o._pt = { clientX: e.clientX, clientY: e.clientY }; }
       if (!down) return;
       if (!dragging && Math.abs(e.clientX - down.x) > 8 && Math.abs(e.clientX - down.x) > Math.abs(e.clientY - down.y)) {
         dragging = true; table.grab(); target.setPointerCapture(e.pointerId); target.classList.add('turning');
@@ -330,7 +369,7 @@ export function createObject(kind, { onOpen, colors }) {
     };
     target.addEventListener('pointerup', up);
     target.addEventListener('pointercancel', up);
-    target.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') away(); });
+    target.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { away(); o._pt = null; } });
   }
 
   // a still of the drawing as it stands: the SVG copied, David's canvas painted into a plain one
@@ -342,6 +381,6 @@ export function createObject(kind, { onOpen, colors }) {
     if (pass) { o.dirty = true; draw(); c.getContext('2d').drawImage(canvas, 0, 0); }
     return c;
   }
-  Object.assign(o, { step: dt => step(dt, { dragging }), draw, mount, resize, bind, setHover, wave, nudge, aspect, away, snapshot });
+  Object.assign(o, { step: dt => step(dt, { dragging }), draw, mount, resize, bind, setHover, wave, nudge, aspect, away, snapshot, setZoom });
   return o;
 }
