@@ -53,6 +53,9 @@ const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&
 // Hairline's curve for things that travel and settle; a gentler S for the strip's glides
 CustomEase.create('hair', '.32,.72,0,1');
 CustomEase.create('glide', '.65,0,.2,1');
+// the shared things between a frame and its page all travel on one S: away from rest gently,
+// across quickly, and a long soft landing, together, so they read as one thing moving
+CustomEase.create('morph', '.6,0,.16,1');
 // ?slow=k plays every move k times slower, for looking at it; reduced motion all but skips them
 const SLOW = +(location.search.match(/[?&]slow=([\d.]+)/)?.[1] || 1);
 gsap.globalTimeline.timeScale(reduced ? 40 : 1 / SLOW);
@@ -288,7 +291,7 @@ const room = $('room'), roomStage = $('room-stage'), roomH = $('room-h'), roomLe
 const roomDots = room.querySelector('.room-dots'), roomHint = roomStage.querySelector('.f-hint');
 const back = $('room-close'), prevB = $('room-prev'), nextB = $('room-next'), topBar = document.querySelector('.top');
 const roomBack = $('room-back');
-const T_OPEN = 0.95, T_CLOSE = 0.72;
+const T_OPEN = 1.0, T_CLOSE = 0.8;
 let current = null, busy = false, want = undefined;
 const rowHTML = (it, n) => {
   const link = !!it.href, tag = link ? 'a' : 'div';
@@ -326,6 +329,10 @@ function boxAt(r) {
   room.appendChild(b);
   return b;
 }
+// one of the page's white boxes (the counter, the film-strip) carried to another's place (Back,
+// a way on): the box alone travels, its hard shadow settling to the button's
+const INK = '#141412';
+function chromeBox(r, sh) { const b = boxAt(r); gsap.set(b, { boxShadow: `${sh}px ${sh}px 0 ${INK}`, zIndex: 3 }); return b; }
 const SHARED = () => [roomH, roomLede, roomNum, roomHint, back, prevB, nextB, ...$('room-list').children];
 
 // ask for a frame (or none): one move runs at a time; the last ask made while busy is kept
@@ -449,33 +456,46 @@ function grow(id, { replace = false } = {}) {
   gSub.classList.add('bare'); roomLede.classList.add('bare');
   const bx = boxAt(first.sub);
 
-  const tl = gsap.timeline({ defaults: { duration: T_OPEN, ease: 'hair' } });
+  // the chrome's stand-ins: the counter and the film-strip as they are (their contents fading),
+  // and their white boxes, which travel: the counter's to Back, the film-strip's, split in two,
+  // to the two ways on at the page's edges
+  const gCount = ghostOf(counter), gFilm = ghostOf(film);
+  const bBack = chromeBox(first.counter, 6), bPrev = chromeBox(first.film, 6), bNext = chromeBox(first.film, 6);
+  gsap.set([gCount, gFilm], { zIndex: 4 });
+  gsap.set([back, prevB, nextB], { autoAlpha: 0 });
+
+  const T = T_OPEN, tl = gsap.timeline({ defaults: { duration: T, ease: 'morph' } });
   tl.addLabel('grow', 0)
     // the ground: the frame's colour opens to the page, its dots go with it
     .to(room, { clipPath: FULL }, 'grow')
     .to(roomDots, { left: 0, top: 0, width: innerWidth, height: innerHeight }, 'grow')
     // the object, from where it stood
-    .from(d.obj.el, { ...place(fit(first.stage, A), fit(stage, A), stage), duration: T_OPEN * 1.08 }, 'grow')
-    // the name box, the caption (crossing over its stand-in), the number, the hint
-    .from(roomH, { ...Flip.fit(roomH, d.bigEl, { scale: true, getVars: true }), transformOrigin: '0 0' }, 'grow+=0.02')
-    // the caption: its white box travels and resizes on its own; its words change inside it
-    // (the frame's leave first, the room's longer ones come in as the box settles)
-    .to(bx, { left: lede.x, top: lede.y, width: lede.w, height: lede.h }, 'grow+=0.04')
-    .to(gSub, { x: lede.x - first.sub.x, y: lede.y - first.sub.y }, 'grow+=0.04')
-    .to(gSub, { autoAlpha: 0, duration: 0.16, ease: 'power1.in' }, 'grow+=0.04')
-    .from(roomLede, { ...place(first.sub, lede, lede, sF) }, 'grow+=0.04')
-    .from(roomLede, { autoAlpha: 0, duration: 0.36, ease: 'power1.out' }, 'grow+=0.16')
-    .to(gOpen, { y: -10, autoAlpha: 0, duration: 0.3, ease: 'power2.in' }, 'grow')
+    .from(d.obj.el, { ...place(fit(first.stage, A), fit(stage, A), stage) }, 'grow')
+    // the name box, the caption's box (its words changing inside), the number, the hint
+    .from(roomH, { ...Flip.fit(roomH, d.bigEl, { scale: true, getVars: true }), transformOrigin: '0 0' }, 'grow+=0.03')
+    .to(bx, { left: lede.x, top: lede.y, width: lede.w, height: lede.h }, 'grow+=0.05')
+    .to(gSub, { x: lede.x - first.sub.x, y: lede.y - first.sub.y }, 'grow+=0.05')
+    .to(gSub, { autoAlpha: 0, duration: 0.2, ease: 'power1.in' }, 'grow+=0.05')
+    .from(roomLede, { ...place(first.sub, lede, lede, sF) }, 'grow+=0.05')
+    .from(roomLede, { autoAlpha: 0, duration: 0.36, ease: 'power1.out' }, `grow+=${T * 0.42}`)
+    .to(gOpen, { y: -8, autoAlpha: 0, duration: 0.24, ease: 'power1.in' }, 'grow')
     .from(roomNum, { x: first.num.x - num.x, y: first.num.y - num.y, clipPath: `inset(0px ${Math.max(0, num.w - first.num.w)}px 0px 0px round 999px)` }, 'grow')
-    .from(roomHint, { x: first.hint.x - hint.x, y: first.hint.y - hint.y, autoAlpha: 0, duration: T_OPEN * 0.9 }, 'grow')
-    // the chrome hands over: the counter becomes Back, the film-strip parts into the two ways on
-    .to([topBar, film], { autoAlpha: 0, duration: 0.3, ease: 'power1.in' }, 'grow')
-    .from(back, { x: first.counter.x + first.counter.w - bk.x - bk.w, y: first.counter.y - bk.y, autoAlpha: 0, duration: T_OPEN * 0.9 }, 'grow+=0.08')
-    .from(prevB, { x: first.film.x - pv.x, y: first.film.y - pv.y, autoAlpha: 0, duration: T_OPEN * 1.05 }, 'grow+=0.1')
-    .from(nextB, { x: first.film.x + first.film.w - nx.x - nx.w, y: first.film.y - nx.y, autoAlpha: 0, duration: T_OPEN * 1.05 }, 'grow+=0.1')
-    // and what belongs to the room alone comes in last, one row at a time
-    .from(rows, { y: 26, autoAlpha: 0, duration: 0.7, stagger: 0.06 }, 'grow+=0.34')
-    .add(() => { gSub.remove(); gOpen.remove(); bx.remove(); roomLede.classList.remove('bare'); d.obj.setHover(true); gsap.set([back, prevB, nextB, roomHint, ...rows], { clearProps: 'transform,opacity,visibility' }); });
+    .from(roomHint, { x: first.hint.x - hint.x, y: first.hint.y - hint.y, autoAlpha: 0 }, 'grow')
+    // the chrome hands over
+    .to([topBar, film], { autoAlpha: 0, duration: 0.01 }, 'grow')
+    .to([gCount, gFilm], { autoAlpha: 0, duration: 0.2, ease: 'power1.in' }, 'grow')
+    .to(bBack, { left: bk.x, top: bk.y, width: bk.w, height: bk.h, boxShadow: `4px 4px 0 ${INK}` }, 'grow+=0.04')
+    .to(bPrev, { left: pv.x, top: pv.y, width: pv.w, height: pv.h, boxShadow: `4px 4px 0 ${INK}` }, 'grow+=0.06')
+    .to(bNext, { left: nx.x, top: nx.y, width: nx.w, height: nx.h, boxShadow: `4px 4px 0 ${INK}` }, 'grow+=0.06')
+    // their words come in as the boxes settle
+    .to([back, prevB, nextB], { autoAlpha: 1, duration: 0.3, ease: 'power1.out', stagger: 0.03 }, `grow+=${T * 0.62}`)
+    // and what belongs to the page alone comes in last, one row at a time
+    .from(rows, { y: 22, autoAlpha: 0, duration: 0.6, stagger: 0.06, ease: 'power3.out' }, `grow+=${T * 0.66}`)
+    .add(() => {
+      for (const g of [gSub, gOpen, bx, gCount, gFilm, bBack, bPrev, bNext]) g.remove();
+      roomLede.classList.remove('bare'); d.obj.setHover(true);
+      gsap.set([back, prevB, nextB, roomHint, ...rows], { clearProps: 'transform,opacity,visibility' });
+    });
   if (replace) history.replaceState(null, '', '#' + id);
   else if (location.hash !== '#' + id) history.pushState(null, '', '#' + id);
   back.focus({ preventScroll: true });
@@ -495,24 +515,30 @@ function shrink({ quiet = false, dur = T_CLOSE } = {}) {
   const bx = boxAt(lede); roomLede.classList.add('bare');
   d.obj.setHover(false);
 
-  const tl = gsap.timeline({ defaults: { duration: dur, ease: 'hair' } });
+  // the chrome's way home, the same film backwards: the buttons' words go, their white boxes
+  // travel back and become the counter and the film-strip again, whose contents come back in
+  const bBack = chromeBox(bk, 4), bPrev = chromeBox(pv, 4), bNext = chromeBox(nx, 4);
+  const gCount = ghostOf(counter), gFilm = ghostOf(film);
+  gsap.set([gCount, gFilm], { zIndex: 4, autoAlpha: 0 });
+
+  const tl = gsap.timeline({ defaults: { duration: dur, ease: 'morph' } });
   tl.addLabel('shrink', 0)
-    .to([...$('room-list').children].reverse(), { y: 10, autoAlpha: 0, duration: 0.16, stagger: 0.02, ease: 'power1.in' }, 'shrink')
-    .to(back, { x: to.counter.x + to.counter.w - bk.x - bk.w, y: to.counter.y - bk.y, autoAlpha: 0, duration: dur * 0.8 }, 'shrink')
-    .to(prevB, { x: to.film.x - pv.x, y: to.film.y - pv.y, autoAlpha: 0, duration: dur * 0.8 }, 'shrink')
-    .to(nextB, { x: to.film.x + to.film.w - nx.x - nx.w, y: to.film.y - nx.y, autoAlpha: 0, duration: dur * 0.8 }, 'shrink')
-    .to(room, { clipPath: inset(fr) }, 'shrink+=0.04')
-    .to(roomDots, { left: fr.x, top: fr.y, width: fr.w, height: fr.h }, 'shrink+=0.04')
-    .to(d.obj.el, { ...place(fit(to.stage, A), fit(stage, A), stage) }, 'shrink+=0.02')
-    .to(roomH, { ...Flip.fit(roomH, d.bigEl, { scale: true, getVars: true }), transformOrigin: '0 0' }, 'shrink+=0.04')
-    .to(bx, { left: to.sub.x, top: to.sub.y, width: to.sub.w, height: to.sub.h }, 'shrink+=0.04')
-    .to(roomLede, { ...place(to.sub, lede, lede, sF) }, 'shrink+=0.04')
-    .to(roomLede, { autoAlpha: 0, duration: 0.14, ease: 'power1.in' }, 'shrink+=0.04')
-    .to(gSub, { x: 0, y: 0 }, 'shrink+=0.04')
-    .to(gSub, { autoAlpha: 1, duration: 0.3, ease: 'power1.out' }, `shrink+=${dur * 0.3}`)
-    .to(roomNum, { x: to.num.x - num.x, y: to.num.y - num.y, clipPath: `inset(0px ${Math.max(0, num.w - to.num.w)}px 0px 0px round 999px)` }, 'shrink+=0.04')
-    .to(roomHint, { x: to.hint.x - hint.x, y: to.hint.y - hint.y, autoAlpha: 0, duration: dur * 0.8 }, 'shrink+=0.04')
-    .to([topBar, film], { autoAlpha: 1, duration: 0.4, ease: 'power1.out' }, `shrink+=${dur * 0.55}`)
+    .to([...$('room-list').children].reverse(), { y: 10, autoAlpha: 0, duration: 0.18, stagger: 0.025, ease: 'power1.in' }, 'shrink')
+    .to([back, prevB, nextB], { autoAlpha: 0, duration: 0.14, ease: 'power1.in' }, 'shrink')
+    .to(bBack, { left: to.counter.x, top: to.counter.y, width: to.counter.w, height: to.counter.h, boxShadow: `6px 6px 0 ${INK}` }, 'shrink+=0.04')
+    .to([bPrev, bNext], { left: to.film.x, top: to.film.y, width: to.film.w, height: to.film.h, boxShadow: `6px 6px 0 ${INK}` }, 'shrink+=0.04')
+    .to([gCount, gFilm], { autoAlpha: 1, duration: 0.24, ease: 'power1.out' }, `shrink+=${dur * 0.68}`)
+    .to(room, { clipPath: inset(fr) }, 'shrink+=0.06')
+    .to(roomDots, { left: fr.x, top: fr.y, width: fr.w, height: fr.h }, 'shrink+=0.06')
+    .to(d.obj.el, { ...place(fit(to.stage, A), fit(stage, A), stage) }, 'shrink+=0.06')
+    .to(roomH, { ...Flip.fit(roomH, d.bigEl, { scale: true, getVars: true }), transformOrigin: '0 0' }, 'shrink+=0.06')
+    .to(bx, { left: to.sub.x, top: to.sub.y, width: to.sub.w, height: to.sub.h }, 'shrink+=0.06')
+    .to(roomLede, { ...place(to.sub, lede, lede, sF) }, 'shrink+=0.06')
+    .to(roomLede, { autoAlpha: 0, duration: 0.16, ease: 'power1.in' }, 'shrink+=0.04')
+    .to(gSub, { x: 0, y: 0 }, 'shrink+=0.06')
+    .to(gSub, { autoAlpha: 1, duration: 0.3, ease: 'power1.out' }, `shrink+=${dur * 0.4}`)
+    .to(roomNum, { x: to.num.x - num.x, y: to.num.y - num.y, clipPath: `inset(0px ${Math.max(0, num.w - to.num.w)}px 0px 0px round 999px)` }, 'shrink+=0.06')
+    .to(roomHint, { x: to.hint.x - hint.x, y: to.hint.y - hint.y, autoAlpha: 0 }, 'shrink+=0.06')
     .add(() => {
       // the frame takes its own things back, exactly where the room left them
       d.obj.open = false;
@@ -521,6 +547,8 @@ function shrink({ quiet = false, dur = T_CLOSE } = {}) {
       d.frame.classList.remove('away');
       gsap.from(d.frame.querySelector('.cap .open'), { y: 8, autoAlpha: 0, duration: 0.4, ease: 'power2.out', clearProps: 'all' });
       gSub.remove(); bx.remove(); roomLede.classList.remove('bare');
+      for (const g of [bBack, bPrev, bNext, gCount, gFilm]) g.remove();
+      gsap.set([topBar, film], { autoAlpha: 1 });
       current = null;
       room.hidden = true;
       gsap.set(room, { autoAlpha: 0, clearProps: 'clipPath' });
