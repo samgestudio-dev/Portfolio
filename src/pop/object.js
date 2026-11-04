@@ -33,14 +33,17 @@ function spring(s, dt) {
 const sp = x => ({ x, v: 0, t: x });
 const norm3 = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
 // David's silkscreen: the light (view space) from the upper left, a little in front
-export const PRINT = { on: true, threshold: 0.5, grain: 1, grainSize: 5, light: [-0.62, 0.5, 0.6], blur: 6, hollow: 1.5 };   // about 19% of him in ink, as much as Warhol's Marilyn
-// ?print=threshold,blur,hollow overrides, for tuning by eye
-{ const m = location.search.match(/[?&]print=([\d.]+),([\d.]+),([\d.]+)/); if (m) Object.assign(PRINT, { threshold: +m[1], blur: +m[2], hollow: +m[3] }); }
+export const PRINT = { on: true, threshold: 0.62, range: 0.4, dot: 4.5, mode: 'am', dotR: 0.36, grain: 1, grainSize: 5, light: [-0.62, 0.5, 0.6], blur: 6, hollow: 1.5 };   // the shadows in halftone dots
+// ?dots=am,4.5 or ?dots=fm,3.5[,0.36]: the screen and its pitch in px (and the FM dot's size)
+{ const m = location.search.match(/[?&]dots=(am|fm),([\d.]+)(?:,([\d.]+))?/); if (m) Object.assign(PRINT, { mode: m[1], dot: +m[2], ...(m[3] ? { dotR: +m[3] } : {}) }); }
+// ?print=threshold,range,dot,hollow overrides, for tuning by eye
+{ const m = location.search.match(/[?&]print=([\d.]+),([\d.]+),([\d.]+),([\d.]+)/); if (m) Object.assign(PRINT, { threshold: +m[1], range: +m[2], dot: +m[3], hollow: +m[4] }); }
 
 export function createObject(kind, { onOpen, colors }) {
   const table = createTurntable({ tour: false });
   const o = { kind, table, hover: false, dirty: true, el: null, stage: null, open: false };
-  let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0;
+  let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0, pxPerUnit = 1;
+  
 
   /* ---- the drawing surface ---- */
   if (kind === 'art') {
@@ -176,7 +179,7 @@ export function createObject(kind, { onOpen, colors }) {
     // every wall seen but turned from it is laid in ink, right after its own solid
     const c = Math.cos(C_.az), sn = Math.sin(C_.az), right = [c, -sn, 0];
     const L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
-    setLight(L);
+    setLight(L, { pitch: PRINT.dot / pxPerUnit, mode: PRINT.mode, dotR: PRINT.dotR });
     const list = kind === 'product' ? phone(P, T, layers.map(L => Math.max(0, L.x)))
       : kind === 'system' ? cabinet(P, T, drawers.map(d => Math.max(0, d.x)))
       : atlas(P, T, CELLS.map((c, n) => ATLAS_REST[n] + AMP * knee(SUM[n])), -1);
@@ -199,6 +202,7 @@ export function createObject(kind, { onOpen, colors }) {
     if (svg && o.stage) {
       const vb = svg.viewBox.baseVal, r = o.stage.getBoundingClientRect();
       const k = Math.min(r.width / vb.width, r.height / vb.height) || 1;     // screen px per drawing unit
+      pxPerUnit = k;
       svg.querySelector('feTurbulence').setAttribute('baseFrequency', (0.55 / k).toFixed(4));
       svg.querySelector('feDisplacementMap').setAttribute('scale', (2.6 / k).toFixed(3));
     }

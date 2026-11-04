@@ -87,21 +87,64 @@ export const at = (f, u, v, w) => [
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 /* A light, for prints: while one is set, each prism also finds its walls that are seen
    but turned away from it (the run of the ring whose outward normal faces the viewer and
-   not the light) and keeps that stretch of wall as one polygon, by its silhouette's path,
-   for whoever draws it to lay in ink. L: a unit vector in the world, toward the light.   */
-let LIGHT = null, SHADES = null;
-export function setLight(L) { LIGHT = L; SHADES = L ? new Map() : null; }
+   not the light) and lays them in halftone: dots on a screen fixed to the picture, 45°,
+   pitch apart, each as big as the wall is dark there (how far it turns from the light,
+   deepening toward the wall's foot). Kept by its silhouette's path, for whoever draws it.
+   L: a unit vector in the world toward the light; pitch in the picture's own units.     */
+import { BLUE, BLUE_N } from './bluenoise.js';
+let LIGHT = null, SHADES = null, PITCH = 4, MODE = 'am', DOT_R = 0.36;
+// mode 'am': dots sized by tone, on a 45° screen; 'fm': one size, kept where a blue-noise rank is under the tone
+export function setLight(L, { pitch = 4, mode = 'am', dotR = 0.36 } = {}) { LIGHT = L; PITCH = pitch; MODE = mode; DOT_R = dotR; SHADES = L ? new Map() : null; }
 export const shadeOf = sil => SHADES?.get(sil) || '';
+const R45 = Math.SQRT1_2;
+const toGrid = p => (MODE === 'fm' ? [p[0] / PITCH, p[1] / PITCH] : [(p[0] + p[1]) * R45 / PITCH, (p[1] - p[0]) * R45 / PITCH]);
+const fromGrid = (i, j) => (MODE === 'fm' ? [i * PITCH, j * PITCH] : [(i - j) * R45 * PITCH, (i + j) * R45 * PITCH]);
+function halftone(quads) {
+  let d = '';
+  const done = new Set();
+  for (const { pg, top, ax, dark } of quads) {
+    const g = pg.map(toGrid), i0 = Math.floor(Math.min(...g.map(q => q[0]))), i1 = Math.ceil(Math.max(...g.map(q => q[0])));
+    const j0 = Math.floor(Math.min(...g.map(q => q[1]))), j1 = Math.ceil(Math.max(...g.map(q => q[1])));
+    const aa = ax[0] * ax[0] + ax[1] * ax[1] || 1;
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const k = i * 100003 + j;
+      if (done.has(k)) continue;
+      const p = fromGrid(i + 0.5, j + 0.5);
+      if (!inside(p, pg)) continue;
+      done.add(k);
+      const t = Math.max(0, Math.min(1, ((p[0] - top[0]) * ax[0] + (p[1] - top[1]) * ax[1]) / aa));
+      const cover = Math.min(1, dark * (0.35 + 0.9 * t));
+      if (cover < 0.03) continue;
+      let r;
+      if (MODE === 'fm') {
+        const rank = BLUE[(((j % BLUE_N) + BLUE_N) % BLUE_N) * BLUE_N + (((i % BLUE_N) + BLUE_N) % BLUE_N)] / 256;
+        if (rank >= Math.pow(cover, 0.7)) continue;
+        r = DOT_R * PITCH;
+      } else r = Math.sqrt(cover) * 0.78 * PITCH * 0.71;
+      d += `M${r2(p[0] - r)} ${r2(p[1])}a${r2(r)} ${r2(r)} 0 1 0 ${r2(2 * r)} 0a${r2(r)} ${r2(r)} 0 1 0 ${r2(-2 * r)} 0`;
+    }
+  }
+  return d;
+}
 export function prism3(P, T, f, ring, inner, w0, w1) {
   const pr = w => ring.map(q => P(...at(f, q.u, q.v, w)));
   const sil = w0 === w1 ? poly(pr(w0)) : poly(hull(pr(w0).concat(pr(w1))));
   if (LIGHT && w0 !== w1) {
     const nrm = q => [f.U[0] * q.nu + f.V[0] * q.nv, f.U[1] * q.nu + f.V[1] * q.nv, f.U[2] * q.nu + f.V[2] * q.nv];
-    const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < -0.08; };
+    const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < -0.04; };
     const r = run(ring, dark);
     if (r.length > 1) {
-      const top = r.map(q => P(...at(f, q.u, q.v, w1))), bot = r.map(q => P(...at(f, q.u, q.v, w0))).reverse();
-      SHADES.set(sil, poly(top.concat(bot)));
+      // the cap the viewer sees is the wall's top edge; the other end, its foot
+      const capHi = dot(f.W, T) >= 0, wt = capHi ? w1 : w0, wb = capHi ? w0 : w1;
+      const quads = [];
+      for (let k = 0; k < r.length - 1; k++) {
+        const a = r[k], b = r[k + 1];
+        const ta = P(...at(f, a.u, a.v, wt)), tb = P(...at(f, b.u, b.v, wt)), bb = P(...at(f, b.u, b.v, wb)), ba = P(...at(f, a.u, a.v, wb));
+        const n = nrm({ nu: (a.nu + b.nu) / 2, nv: (a.nv + b.nv) / 2 }), l = Math.hypot(...n) || 1;
+        quads.push({ pg: [ta, tb, bb, ba], top: ta, ax: [ba[0] - ta[0], ba[1] - ta[1]], dark: Math.min(1, -dot(n, LIGHT) / l / 0.7) });
+      }
+      const d = halftone(quads);
+      if (d) SHADES.set(sil, d);
     }
   }
   let crease = '';
