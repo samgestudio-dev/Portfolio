@@ -104,11 +104,11 @@ export function createObject(kind, { onOpen, colors }) {
         real = createRealLayers(THREE, renderer, geo);
         real.resize(bufW, bufH);
         real.setLayers({ real: realOf(zoom) });
-        // on a computer his close-up is drawn from the finer scan (200k triangles), fetched the
-        // first time it is wanted; the mid mesh stands in until it arrives
+        // on a computer his close-up is drawn from the full scan (1.2M triangles, 3.6 MB), fetched
+        // the first time it is wanted; the mid mesh stands in until it arrives
         if (matchMedia('(min-width: 861px) and (hover: hover)').matches) wantHi = () => {
           wantHi = null;
-          Promise.resolve(window.DAVID_HI_URL_F ? window.DAVID_HI_URL_F() : './models/david/david-hi.glb').then(u => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(u, g2 => {
+          Promise.resolve(window.DAVID_FULL_URL_F ? window.DAVID_FULL_URL_F() : './models/david/david-full.glb').then(u => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(u, g2 => {
             let hg; g2.scene.traverse(m => { if (m.isMesh && !hg) { m.updateWorldMatrix(true, false); hg = m.geometry.clone().applyMatrix4(m.matrixWorld); } });
             if (!hg.attributes.normal) hg.computeVertexNormals();
             real.setGeometry(hg); o.dirty = true;

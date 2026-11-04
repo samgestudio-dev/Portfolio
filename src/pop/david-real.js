@@ -38,7 +38,7 @@ export function createRealLayers(THREE, renderer, geo) {
   // of his chest and his jaw fall into deep shadow; a weak fill from the left keeps those grey;
   // a rim from behind on the left cuts his dark side from the ground; a little sky over all)
   const rig = new THREE.Group();
-  const key = new THREE.DirectionalLight(0xffffff, 4.2); key.position.set(1.3, 2.1, 1.5);
+  const key = new THREE.DirectionalLight(0xffffff, 3.4); key.position.set(1.3, 2.1, 1.5);
   const fill = new THREE.DirectionalLight(0xffffff, 0.28); fill.position.set(-1.8, 0.1, 1.0);
   const rim = new THREE.DirectionalLight(0xffffff, 1.1); rim.position.set(-1.6, 0.9, -1.4);
   for (const l of [key, fill, rim]) { l.target.position.set(0, 0, -1); rig.add(l, l.target); }
@@ -59,7 +59,8 @@ export function createRealLayers(THREE, renderer, geo) {
     uSmL: { value: new THREE.Vector3(...PAINT.smileL) }, uSmR: { value: new THREE.Vector3(...PAINT.smileR) },
     uSmNL: { value: new THREE.Vector3(...PAINT.smileLN).normalize() }, uSmNR: { value: new THREE.Vector3(...PAINT.smileRN).normalize() }, uSmS: { value: PAINT.smileSize },
   };
-  const marble = new THREE.MeshStandardMaterial({ color: 0xbdbdbd, roughness: 0.5, metalness: 0 });
+  // white marble, honed rather than polished: almost no shine, a faint warmth in the white
+  const marble = new THREE.MeshStandardMaterial({ color: 0xe4e1da, roughness: 0.88, metalness: 0 });
   marble.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader
@@ -117,9 +118,9 @@ export function createRealLayers(THREE, renderer, geo) {
           // grime that gathers where it faces down
           float mott = n3(vP * 60.0) * 0.6 + n3(vP * 170.0) * 0.4;
           float grit = n3(vP * 1400.0);
-          float vein = 1.0 - smoothstep(0.0, 0.035, abs(n3(vP * vec3(22.0, 9.0, 22.0)) - 0.5));
+          float vein = 1.0 - smoothstep(0.0, 0.022, abs(n3(vP * vec3(22.0, 9.0, 22.0)) - 0.5)) * 0.7 - 0.3 * (1.0 - smoothstep(0.0, 0.012, abs(n3(vP * vec3(61.0, 25.0, 61.0)) - 0.5)));
           float down = clamp(-vNormalObj.y, 0.0, 1.0);
-          diffuseColor.rgb *= (0.8 + 0.22 * mott) * (0.9 + 0.12 * grit) * (1.0 - 0.12 * vein) * (1.0 - 0.28 * down);
+          diffuseColor.rgb *= (0.84 + 0.18 * mott) * (0.92 + 0.1 * grit) * (1.0 - 0.18 * clamp(vein, 0.0, 1.0)) * (1.0 - 0.26 * down);
         }
         {
           float pa = uPaint;
@@ -140,46 +141,42 @@ export function createRealLayers(THREE, renderer, geo) {
   const statue = new THREE.Mesh(geo, marble);
   statue.castShadow = statue.receiveShadow = true;
 
-  // the yellow line around him, standing off his outline as a painted line does: his shape
-  // pushed out along its normals twice — the outer in yellow, then the inner punched back to
-  // nothing (the page shows through) — and he over both. Two strands, a heavy one close and a
-  // thin one further out, wavering and skipping, drawn on from his crown down, and redrawn
-  // 24 times a second with a new hand, as a line boils in drawn animation.
+  // the yellow line around him, right behind him: his shape pushed out along its normals in
+  // three loose passes of a marker, each scribbled in hatching at its own angle, jagged at its
+  // edge, skipping here and there, drawn on from his crown down, and redrawn 24 times a
+  // second with a new hand, as a line boils in drawn animation. He is painted over all three.
   // (No face culling: the scanned mesh is not consistently wound.)
   const OU = { uOut: { value: 0 }, uBoil: { value: 0 } };
-  const strand = (gap, width, seed, wild) => {
-    const VS = outer => /* glsl */ `
+  const strand = (width, seed, angle, period, ink) => new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    uniforms: OU, side: THREE.DoubleSide, depthWrite: false, depthTest: false,
+    vertexShader: /* glsl */ `
       uniform float uOut, uBoil; varying vec3 vP;
       ${GLSL_NOISE}
       void main() {
         vP = position;
         vec3 q = position + vec3(uBoil * 0.731, uBoil * 0.377, uBoil * 0.513) + ${seed.toFixed(1)};
-        float g = ${gap} * (0.45 + 1.1 * n3(q * 24.0) + ${wild} * (n3(q * 90.0) - 0.5));
-        float w = ${outer ? `g + ${width} * (0.35 + 1.3 * n3(q * 57.0) + 0.6 * (n3(q * 170.0) - 0.5))` : 'g'};
+        float w = ${width} * (0.25 + 1.2 * n3(q * 21.0) + 0.7 * (n3(q * 75.0) - 0.5) + 0.35 * (n3(q * 210.0) - 0.5));
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal * max(0.0, w) * smoothstep(0.0, 0.3, uOut), 1.0);
-      }`;
-    const outer = new THREE.ShaderMaterial({
-      uniforms: OU, side: THREE.DoubleSide, depthWrite: false, depthTest: false,
-      vertexShader: VS(true),
-      fragmentShader: /* glsl */ `
-        uniform float uOut, uBoil; varying vec3 vP;
-        ${GLSL_NOISE}
-        void main() {
-          vec3 q = vP + vec3(uBoil * 0.731, uBoil * 0.377, uBoil * 0.513) + ${seed.toFixed(1)};
-          if (vP.y < 1.03 - uOut * 0.65 - n3(q * 30.0) * 0.05) discard;    // drawn on from the top down
-          if (n3(q * 40.0) < ${(0.14 + wild * 0.12).toFixed(3)}) discard;   // where the marker skipped
-          float st = n3(vec3(gl_FragCoord.xy * vec2(0.08, 0.3), uBoil) + vP * 5.0);
-          gl_FragColor = vec4(mix(vec3(1.0, 0.84, 0.0), vec3(1.0, 0.95, 0.28), st), 1.0);
-        }`,
-    });
-    const inner = new THREE.ShaderMaterial({
-      uniforms: OU, side: THREE.DoubleSide, depthWrite: false, depthTest: false, blending: THREE.NoBlending,
-      vertexShader: VS(false), fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
-    });
-    return [new THREE.Mesh(geo, outer), new THREE.Mesh(geo, inner)];
-  };
-  // painted outermost first, each punched before the next goes on
-  const strands = [...strand(0.0175, 0.0032, 7.0, 0.6), ...strand(0.0085, 0.0062, 1.0, 0.35)];
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uOut, uBoil; varying vec3 vP;
+      ${GLSL_NOISE}
+      void main() {
+        vec3 q = vP + vec3(uBoil * 0.731, uBoil * 0.377, uBoil * 0.513) + ${seed.toFixed(1)};
+        if (vP.y < 1.03 - uOut * 0.65 - n3(q * 30.0) * 0.05) discard;           // drawn on from the top down
+        if (n3(q * 36.0) < 0.12) discard;                                        // where the marker skipped
+        // the hatching: strokes at this pass's angle, wobbling, of uneven weight
+        vec2 dir = vec2(cos(${angle.toFixed(3)}), sin(${angle.toFixed(3)}));
+        // (bent hard by two scales of noise, so the strokes swing and cross like a quick marker)
+        vec2 fc = gl_FragCoord.xy;
+        float along = dot(fc, dir) / ${period.toFixed(1)} + 3.2 * n3(vec3(fc * 0.006, uBoil * 0.7)) + 1.1 * n3(vec3(fc * 0.03, uBoil));
+        if (fract(along) > ${ink.toFixed(2)} + 0.35 * (n3(vec3(fc * 0.02, uBoil + 3.0)) - 0.5)) discard;
+        float st = n3(vec3(gl_FragCoord.xy * vec2(0.08, 0.3), uBoil) + vP * 5.0);
+        gl_FragColor = vec4(mix(vec3(1.0, 0.84, 0.0), vec3(1.0, 0.96, 0.3), st), 1.0);
+      }`,
+  }));
+  // widest and loosest first, the densest last (closest to him)
+  const strands = [strand(0.028, 7.0, 0.62, 17.0, 0.52), strand(0.018, 3.0, -0.95, 12.0, 0.6), strand(0.01, 1.0, 0.2, 9.0, 0.8)];
   strands.forEach((m, k) => (m.renderOrder = -10 + k));
   const hull = new THREE.Group(); hull.add(...strands);
   group.add(hull, statue);
@@ -240,7 +237,8 @@ export function createRealLayers(THREE, renderer, geo) {
     return { p: p.toArray().map(v => +v.toFixed(4)), n: n.toArray().map(v => +v.toFixed(3)) };
   }
   // a finer mesh of the same statue (same units), when it arrives
-  function setGeometry(g) { statue.geometry = g; for (const m of strands) m.geometry = g; }
+  // (the statue only: the yellow line needs no finer shape than it has, and is drawn three times)
+  function setGeometry(g) { statue.geometry = g; }
   // the line's hand for frame k (24 a second)
   function setBoil(k) { OU.uBoil.value = k % 97; }
   return { setLayers, resize, render, pick, frame, setGeometry, setBoil, layers: L, uniforms: U, camera: cam };
