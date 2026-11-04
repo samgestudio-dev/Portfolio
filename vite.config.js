@@ -15,6 +15,7 @@ export default defineConfig({
         flipbook: resolve(import.meta.dirname, 'flipbook.html'),
         atlas: resolve(import.meta.dirname, 'atlas.html'),
         pop: resolve(import.meta.dirname, 'pop.html'),
+        popV1: resolve(import.meta.dirname, 'pop-v1.html'),
       },
     },
   },
