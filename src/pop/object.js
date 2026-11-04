@@ -241,10 +241,10 @@ export function createObject(kind, { onOpen, colors }) {
     const c = Math.cos(C_.az), sn = Math.sin(C_.az), right = [c, -sn, 0];
     let L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
     if (kind === 'product') {
-      // the phone's own light: nearly from the viewer, a little to the right, 40° up, so its
-      // screen stays lit as it turns right until it is all but edge-on (about 85°), and only
+      // the phone's own light: nearly from the viewer, a little to the left, 40° up, so its
+      // screen stays lit as it turns left until it is all but edge-on (about 85°), and only
       // then do its faces go into shadow
-      const th = norm3([T[0], T[1], 0]), phi = (12 * Math.PI) / 180, el = (40 * Math.PI) / 180;
+      const th = norm3([T[0], T[1], 0]), phi = (-12 * Math.PI) / 180, el = (40 * Math.PI) / 180;
       L = norm3([0, 1, 2].map(i => Math.cos(el) * (Math.cos(phi) * th[i] + Math.sin(phi) * right[i]) + (i === 2 ? Math.sin(el) : 0)));
     }
     setLight(L, { mode: 'sweep' });   // the phone, cabinet and atlas: the shadow's edge sweeps across each wall as it turns
