@@ -84,6 +84,9 @@ new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(window.DAVID_MODEL_URL |
   art.head = { x: x / n, z: z / n, y: (y0 + y1) / 2 - 0.012, r: 0.075 };
   davidReady = true; looks++;
 });
+const REACH_AT = 900;                         // buffer pixels to David's height at which his lines were tuned
+let REACH_POW = 0.5, REACH_MAX = 3, REACH_FIX = 0;   // how much of the zoom the reach follows, its cap; ?reach=k fixes it
+{ const m = location.search.match(/[?&]reach=([\d.]+)/); if (m) REACH_FIX = +m[1]; }
 const pixelRatio = () => (window.devicePixelRatio >= 3 ? 2 : Math.min(window.devicePixelRatio * 1.5, 2.5));
 
 /* ---- the model -------------------------------------------------------------- */
@@ -383,7 +386,11 @@ function drawDavid(V, o) {
   cam3.near = Math.max(0.01, d / SD - 1.2); cam3.far = d / SD + 2;
   cam3.updateProjectionMatrix();
   const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
-  pass.setScale((2 * (d / SD) * Math.tan(((V.fov / 2) * Math.PI) / 180)) / buf.y);
+  const perPx = (2 * (d / SD) * Math.tan(((V.fov / 2) * Math.PI) / 180)) / buf.y;
+  pass.setScale(perPx);
+  // seen close, look for folds and valleys over the same stretch of marble as on his own
+  // page (about 900 buffer pixels to his height there); seen small, as there
+  pass.setReach(REACH_FIX || clamp(Math.pow(1 / perPx / REACH_AT, REACH_POW), 1, REACH_MAX));
   pass.setDepthBias(Math.max(0, d / SD - 0.8));
   pass.render(scene3, cam3, hot === o.i ? 1 : -1);
 }

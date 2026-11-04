@@ -103,7 +103,7 @@ const valleyFrag = /* glsl */`
 const lineFrag = /* glsl */`
   ${common}
   uniform sampler2D tV; uniform float uR;
-  uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx;
+  uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx, uReach;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
   uniform float uHair, uMerge, uAlpha;
   bool isFill(vec4 s) { float i = oid(s), f = s.b - i; return s.a > 0.0 && i > 1.5 && f > 0.3 && f < 0.6; }
@@ -181,7 +181,7 @@ const lineFrag = /* glsl */`
     // the line on the fold's sharpest point. Only the crest is inked (not beaten one
     // stroke further on either side), so any fold draws as one stroke.
     if (!cb) {
-      float rf = max(2.0, 1.5 * uR), rn = 1.0, best = 0.0;
+      float rf = max(2.0, 1.5 * uR) * uReach, rn = 1.0, best = 0.0;
       vec2 bdir = vec2(1.0, 0.0);
       for (int k = 0; k < 8; k++) {
         float a = float(k) * 0.392699;
@@ -190,7 +190,7 @@ const lineFrag = /* glsl */`
         if (t > best) { best = t; bdir = dir; }
       }
       if (best > uCrease) {
-        vec2 o = bdir * max(1.0, 2.0 * uR) * uTexel, df = bdir * rf * uTexel, dn = bdir * rn * uTexel;
+        vec2 o = bdir * max(1.0, 2.0 * uR) * sqrt(uReach) * uTexel, df = bdir * rf * uTexel, dn = bdir * rn * uTexel;
         float here = best + 0.5 * turnAt(vUv, dn, id, jump);
         float tp = turnAt(vUv + o, df, id, jump) + 0.5 * turnAt(vUv + o, dn, id, jump);
         float tm = turnAt(vUv - o, df, id, jump) + 0.5 * turnAt(vUv - o, dn, id, jump);
@@ -356,7 +356,7 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
   const uniforms = {
     ...shared, tV: { value: rtV.texture }, uR: { value: 1.5 },
     uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHotLo: { value: -1 }, uHotHi: { value: -1 }, uWorldPx: { value: 0.001 },
-    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 }, uAlpha: { value: transparent ? 1 : 0 },
+    uForm: { value: 0.02 }, uFormOn: { value: 1 }, uReach: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 }, uAlpha: { value: transparent ? 1 : 0 },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
     cPlate: { value: col('plate') }, cHi: { value: col('hi') }, cEdge: { value: col('edge') },
     cMid: { value: col('mid') }, cLo: { value: col('lo') },
@@ -379,7 +379,7 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
     uDash: { value: 2 }, uOpacity: { value: 1 }, cMid: uniforms.cMid,
   };
   const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  let ratio = 1, strokePx = 1;
+  let ratio = 1, strokePx = 1, reach = 1;
   const clear = new THREE.Color(0, 0, 0);
   const strokeR = () => Math.max(0.75, strokePx * ratio * 0.5);
 
@@ -399,7 +399,7 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
       guideUniforms.uRes.value.set(w, h);
       guideUniforms.uDash.value = 1.4 * pixelRatio;
       uniforms.uR.value = strokeR();
-      valleyUniforms.uFormR.value = 5 * ratio;      // ~5 CSS px: a muscle valley on screen
+      valleyUniforms.uFormR.value = 5 * ratio * reach;      // ~5 CSS px: a muscle valley on screen
     },
     // detail: the turn that counts as a crease, 60° at 0 down to 18° at 1
     // muscle 0: no muscle lines; 1: every clear valley
@@ -416,6 +416,10 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
     },
     // world units per buffer pixel, so the depth plane can be extended across the ring
     setScale(worldPerPx) { uniforms.uWorldPx.value = worldPerPx; },
+    // reach: how far, in multiples of the usual few pixels, a fold or a valley is looked
+    // for. Seen close, the same fold spans many more pixels and turns too little across a
+    // few of them to show: a longer reach measures it over the same stretch of surface.
+    setReach(k) { reach = k; uniforms.uReach.value = k; valleyUniforms.uFormR.value = 5 * ratio * reach; },
     // view depth subtracted before it is stored, so half floats stay precise far from the eye
     setDepthBias(v) { biasU.value = v; },
     // segments: [[a, b], ...] in the parent's space; returns a mesh to add to the scene
