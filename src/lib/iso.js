@@ -184,6 +184,17 @@ function sweep(quads) {
   });
   return d;
 }
+// a flat face inked as far across as t, from the side turned away from the light (whose
+// direction on the picture runs from o to l), at the page's one slant
+function sweepFrom(pg, t, l, o) {
+  if (t < 0.02 || pg.length < 3) return '';
+  if (t >= 0.995) return poly(pg);
+  let n = SN;
+  if (n[0] * (l[0] - o[0]) + n[1] * (l[1] - o[1]) < 0) n = [-n[0], -n[1]];   // n points to the light
+  const s = pg.map(p => n[0] * p[0] + n[1] * p[1]), s0 = Math.min(...s), s1 = Math.max(...s);
+  const part = clipHalf(pg, n, s0 + (s1 - s0) * t);
+  return part.length > 2 ? poly(part) : '';
+}
 export function prism3(P, T, f, ring, inner, w0, w1) {
   const pr = w => ring.map(q => P(...at(f, q.u, q.v, w)));
   const sil = w0 === w1 ? poly(pr(w0)) : poly(hull(pr(w0).concat(pr(w1))));
@@ -192,6 +203,7 @@ export function prism3(P, T, f, ring, inner, w0, w1) {
     const lim = MODE === 'tone' || MODE === 'sweep' ? TONE_LIT : -0.04;
     const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < lim; };
     const r = run(ring, dark);
+    let d = '';
     if (r.length > 1) {
       // the cap the viewer sees is the wall's top edge; the other end, its foot
       const capHi = dot(f.W, T) >= 0, wt = capHi ? w1 : w0, wb = capHi ? w0 : w1;
@@ -202,11 +214,22 @@ export function prism3(P, T, f, ring, inner, w0, w1) {
         const n = nrm({ nu: (a.nu + b.nu) / 2, nv: (a.nv + b.nv) / 2 }), l = Math.hypot(...n) || 1;
         quads.push({ pg: [ta, tb, bb, ba], top: ta, ax: [ba[0] - ta[0], ba[1] - ta[1]], dark: Math.min(1, -dot(n, LIGHT) / l / 0.7), tone: toneOf(dot(n, LIGHT) / l) });
       }
-      const d = MODE === 'solid'
+      d = MODE === 'solid'
         ? poly(r.map(q => P(...at(f, q.u, q.v, wt))).concat(r.map(q => P(...at(f, q.u, q.v, wb))).reverse()))
         : MODE === 'tone' ? tint(quads) : MODE === 'sweep' ? sweep(quads) : halftone(quads);
-      if (d) SHADES.set(sil, d);
     }
+    // the cap the viewer sees (a drawer's front, a layer's face) is a wall too: inked as it
+    // turns from the light, the edge coming in from the side away from it
+    if (MODE === 'sweep' || MODE === 'tone') {   // (the older prints keep their walls-only shadows)
+      const up = dot(f.W, T) >= 0, cn = up ? f.W : f.W.map(x => -x), w = up ? w1 : w0, c = dot(cn, LIGHT);
+      if (dot(cn, T) > 0.02 && c < lim) {
+        const pg = pr(w), tone = toneOf(c);
+        if (tone >= TONE_SOLID) d += poly(pg);
+        else if (MODE === 'tone') d += tint([{ pg, tone }]);
+        else if (MODE === 'sweep') d += sweepFrom(pg, tone / TONE_SOLID, P(...LIGHT), P(0, 0, 0));
+      }
+    }
+    if (d) SHADES.set(sil, d);
   }
   let crease = '';
   if (inner && w0 !== w1) {
