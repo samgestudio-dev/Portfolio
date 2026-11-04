@@ -262,6 +262,7 @@ clock(); setInterval(clock, 15000);
 const room = $('room'), roomStage = $('room-stage'), roomH = $('room-h'), roomLede = $('room-lede'), roomNum = $('room-num');
 const roomDots = room.querySelector('.room-dots'), roomHint = roomStage.querySelector('.f-hint');
 const back = $('room-close'), prevB = $('room-prev'), nextB = $('room-next'), topBar = document.querySelector('.top');
+const roomBack = $('room-back');
 const T_OPEN = 0.95, T_CLOSE = 0.72;
 let current = null, busy = false, want = undefined;
 const rowHTML = (it, n) => {
@@ -316,20 +317,47 @@ async function request(id) {
   } finally { busy = false; }
   if (want !== undefined) { const w = want; want = undefined; request(w); }
 }
+// another category, from an opened one: one camera move on the pages themselves — this page
+// pulls back a little (its black edges show), slides away as the next slides in beside it,
+// and the next comes up to fill the screen. The page leaving is a still copy of itself; the
+// room underneath has already become the next one.
 async function switchTo(id) {
-  // 1 back out to the strip: the opened frame shrinks home, its black gutters return
-  await shrink({ quiet: true, dur: T_CLOSE * 0.9 });
-  // 2 glide along it, the camera pulled back a little while it moves
-  const i = FRAMES.indexOf(byId[id].frame), g = glideTween(i), D = g.duration();
-  const cam = gsap.timeline()
-    .to(strip, { scale: 0.9, duration: D * 0.42, ease: 'power2.out' }, 0)
-    .to(strip, { scale: 1, duration: D * 0.5, ease: 'power2.inOut' }, D * 0.5);
-  keep(cam);
-  await Promise.all([done(g), done(cam)]);
-  // (by hand: GSAP's clearProps on the strip would also put back its scroll, which ScrollTo moved)
-  gsap.set(strip, { scale: 1 }); strip.style.transform = '';
-  // 3 and in again
-  await grow(id, { replace: true });
+  const from = byId[current], to = byId[id];
+  const di = (DISC.indexOf(to) - DISC.indexOf(from) + DISC.length) % DISC.length, dir = di === DISC.length - 1 ? -1 : 1;
+  const still = room.cloneNode(true);
+  still.removeAttribute('id'); still.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+  still.classList.add('still'); still.setAttribute('aria-hidden', 'true');
+  still.querySelector('.room-stage .obj-svg, .room-stage .obj-canvas')?.replaceWith(from.obj.snapshot());
+  room.before(still);                       // beneath the room, which covers it as it comes up
+  roomBack.hidden = false;
+  // the room becomes the next one underneath: the old object home to its frame, the new one in
+  from.obj.open = false; from.obj.setHover(false); from.obj.mount(from.stage);
+  from.frame.classList.remove('away'); wake(from);
+  current = id;
+  room.className = `room ${id}`;
+  fillRoom(to);
+  to.obj.setHover(false); to.obj.mount(roomStage); to.obj.open = true;
+  to.frame.classList.add('away');
+  gsap.set([to.obj.el, ...SHARED()], { clearProps: 'all' });
+  // the strip, unseen beneath, moves to the next frame, so Back closes onto it
+  stopGlide(); strip[axis()] = targetOf(FRAMES.indexOf(to.frame));
+  const s = 0.88, shift = (innerWidth * s + 16) * dir, R = 'inset(0px 0px 0px 0px round 16px)';
+  gsap.set([room, still], { transformOrigin: '50% 50%' });
+  gsap.set(still, { clipPath: FULL, x: 0, scale: 1 });
+  gsap.set(room, { clipPath: R, x: shift, scale: s });
+  const tl = gsap.timeline({ defaults: { ease: 'hair' } })
+    .to(still, { scale: s, clipPath: R, duration: 0.3, ease: 'power2.out' }, 0)
+    .to([still, room], { x: `-=${shift}`, duration: 0.52, ease: 'glide' }, 0.2)
+    .to(room, { scale: 1, clipPath: FULL, duration: 0.42 }, 0.64)
+    .from([...$('room-list').children], { y: 14, autoAlpha: 0, duration: 0.4, stagger: 0.04, clearProps: 'all' }, 0.62)
+    .add(() => {
+      still.remove(); roomBack.hidden = true;
+      gsap.set(room, { clearProps: 'transform' });
+      to.obj.setHover(true);
+    });
+  history.replaceState(null, '', '#' + id);
+  back.focus({ preventScroll: true });
+  await done(keep(tl));
 }
 
 function grow(id, { replace = false } = {}) {
