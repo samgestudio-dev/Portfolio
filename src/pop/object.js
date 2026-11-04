@@ -33,7 +33,9 @@ function spring(s, dt) {
 const sp = x => ({ x, v: 0, t: x });
 const norm3 = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
 // David's silkscreen: the light (view space) from the upper left, a little in front
-export const PRINT = { on: true, threshold: 0.32, grain: 1, grainSize: 5, light: [-0.62, 0.5, 0.6] };
+export const PRINT = { on: true, threshold: 0.5, grain: 1, grainSize: 5, light: [-0.62, 0.5, 0.6], blur: 6, hollow: 1.5 };   // about 19% of him in ink, as much as Warhol's Marilyn
+// ?print=threshold,blur,hollow overrides, for tuning by eye
+{ const m = location.search.match(/[?&]print=([\d.]+),([\d.]+),([\d.]+)/); if (m) Object.assign(PRINT, { threshold: +m[1], blur: +m[2], hollow: +m[3] }); }
 
 export function createObject(kind, { onOpen, colors }) {
   const table = createTurntable({ tour: false });
