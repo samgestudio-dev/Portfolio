@@ -2,14 +2,15 @@ import { createTurntable, bindWheel } from '../lib/turntable.js';
 import { Cam, proj, toward, prism3, hull, inside, circ } from '../lib/iso.js';
 import { buildPlatter, PLATTER_R } from '../lib/platter-svg.js';
 import { fillKeyed } from '../lib/keyed-fill.js';
-import { atlas, restHeights, restHull, CELLS, EXTENT, AMP, CAP, PB, KS, CS } from './scene.js';
+import { atlas, restHeights, restHull, CELLS, EXTENT, AMP, CAP, PB } from './scene.js';
 
 /* Motion · 02 — a spring atlas on the turntable, after Hairline's Terrain.
 
    One model drives everything (Kaero): θ, the turntable, and for each of the 81 springs
-   its stretch x and speed v. A pillar stands at its rest height (how long its spring
-   takes to settle) plus AMP · x. Plucked, each spring is lifted and let go, and from
-   then on obeys only its own two numbers: ẍ = −k x − c ẋ, in real time.
+   the answers it is giving to the kicks it has had. A pillar stands at its rest height
+   (how long its spring takes to settle) plus AMP · the sum of its answers. Each answer
+   is a lift and a let-go, then obeys only the spring's two numbers, ẍ = −k x − c ẋ, in
+   real time; kicks add and never interrupt each other.
 
    Hover    the pillar under the pointer is lifted a little and let go; it takes the
             bright edge and the read-out gives its k · c · ζ · settle.
@@ -17,6 +18,7 @@ import { atlas, restHeights, restHull, CELLS, EXTENT, AMP, CAP, PB, KS, CS } fro
             by distance), kicking each spring as it passes; each region rings at its own
             rate and dies its own way. Tap again and again and the rings follow one
             another out, crossing and stacking. Space or Pluck all, out from the middle.
+   Idle     every five seconds a tap at a random spot.
    Drag     spins the turntable; a trackpad swipe too. ← → a quarter turn.          */
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -56,22 +58,24 @@ function setAz() { C.az = (45 * Math.PI) / 180 - table.theta; }
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const table = createTurntable({ tour: false });
 const NC = CELLS.length, REST = restHeights();
-const X = new Float64Array(NC), V = new Float64Array(NC);
-const LIFT = new Float64Array(NC).fill(-1);            // seconds into its lift; −1 free
-const FROM = new Float64Array(NC), TO = new Float64Array(NC);
-const LIFT_S = 0.14;                        // the lift itself: quick, then let go; how high kicks can stack
+// Each kick is its own answer: a lift by `amount`, then let go, ringing on by the spring's
+// k and c. A pillar stands at the sum of all its answers (the spring is linear, so they
+// simply add), so a second kick never stops the first: the motions lie over each other
+// as ripples on water do. Each answer: its pillar, its stretch and speed, its lift.
+const LIFT_S = 0.14;                                   // the lift itself: quick, then let go
 const ease = t => 1 - Math.pow(1 - t, 3);
-let awake = 0;                                         // springs not yet still: the loop sleeps at 0 (rule 07)
+const answers = [];
+const SUM = new Float64Array(NC);
+let awake = 0, ringing = 0;                            // anything still moving: the loop sleeps at 0 (rule 07)
 
-// a kick: lift this spring by `amount` from wherever it is now, then let it go. Kicks add,
-// so a spring caught mid-swing by a second wave is thrown again, not reset.
 function kick(n, amount) {
   if (reduced) return;
-  FROM[n] = X[n]; TO[n] = Math.min(CAP, X[n] + amount); LIFT[n] = 0; V[n] = 0;
+  answers.push({ n, a: amount, x: 0, v: 0, t: 0 });
 }
 const pluck = kick;
 // Waves: each tap sends its own ring out across the field, at a steady speed (rule 02:
-// stagger by distance). A spring is kicked as a ring passes it; rings cross and stack.
+// stagger by distance), a little weaker the farther it goes. A spring is kicked as a
+// ring passes it; rings cross and stack.
 const SPEED = 150;                                     // mm a second
 const waves = [];
 const REACH = Math.hypot(EXTENT.r, EXTENT.r);
@@ -82,37 +86,38 @@ function pluckAll(cx = 0, cy = 0, amount = 1) {
 function stepWaves(dt) {
   for (let w = waves.length - 1; w >= 0; w--) {
     const wv = waves[w], r0 = wv.r, r1 = r0 + SPEED * dt;
-    CELLS.forEach((c, n) => { const d = Math.hypot(c.cx - wv.cx, c.cy - wv.cy); if (d > r0 && d <= r1) kick(n, wv.amount); });
+    CELLS.forEach((c, n) => {
+      const d = Math.hypot(c.cx - wv.cx, c.cy - wv.cy);
+      if (d > r0 && d <= r1) kick(n, wv.amount * (1 - 0.35 * d / REACH));
+    });
     wv.r = r1;
     if (r1 > REACH) waves.splice(w, 1);
   }
 }
 function stepSprings(dt) {
   stepWaves(dt);
-  awake = waves.length ? 1 : 0;
-  let live = 0;
+  SUM.fill(0);
   const sub = Math.max(1, Math.ceil(dt * 480)), h = dt / sub;
-  for (let n = 0; n < NC; n++) {
-    if (LIFT[n] >= 0) {
-      LIFT[n] += dt;
-      const t = Math.min(1, LIFT[n] / LIFT_S);
-      X[n] = FROM[n] + (TO[n] - FROM[n]) * ease(t); V[n] = 0;
-      if (t >= 1) LIFT[n] = -1;
-      live++;
-      continue;
+  for (let q = answers.length - 1; q >= 0; q--) {
+    const A = answers[q];
+    if (A.t < LIFT_S) {
+      A.t += dt;
+      A.x = A.a * ease(Math.min(1, A.t / LIFT_S)); A.v = 0;
+    } else {
+      const { k, c } = CELLS[A.n];
+      let x = A.x, v = A.v;
+      for (let s = 0; s < sub; s++) { v += (-k * x - c * v) * h; x += v * h; }
+      A.x = x; A.v = v;
+      if (Math.abs(x) < 0.002 && Math.abs(v) < 0.02) { answers.splice(q, 1); continue; }
     }
-    if (X[n] === 0 && V[n] === 0) continue;
-    const { k, c } = CELLS[n];
-    let x = X[n], v = V[n];
-    for (let s = 0; s < sub; s++) { v += (-k * x - c * v) * h; x += v * h; }
-    if (Math.abs(x) < 0.002 && Math.abs(v) < 0.02) { x = 0; v = 0; } else live++;
-    X[n] = x; V[n] = v;
+    SUM[A.n] += A.x;
   }
-  ringing = live;
-  awake = Math.max(awake, live);
+  const moving = new Set(answers.map(A => A.n));
+  ringing = moving.size;
+  awake = waves.length + answers.length;
 }
-let ringing = 0;
-const heights = () => CELLS.map((c, n) => REST[n] + AMP * X[n]);
+// stacked answers ease into a ceiling rather than hitting it
+const heights = () => CELLS.map((c, n) => REST[n] + AMP * CAP * Math.tanh(SUM[n] / CAP));
 
 /* ---- pointer: tested against the pillars at rest (rule 01) -------------------- */
 function toView(e) {
@@ -201,25 +206,26 @@ sysDark.addEventListener('change', syncTheme);
 syncTheme();
 applyLook();
 
-/* ---- the tour: the field, then three springs that each answer differently, then a leave */
-const cell = (k, c) => KS.indexOf(k) + CS.indexOf(c) * KS.length;
-const HAIRLINE = cell(100, 18), RINGS = cell(40, 2), CREEPS = cell(40, 40);
-const show = n => () => { hot = n; pluck(n, 0.8); };
-const TOUR = [[1.0, () => pluckAll()], [4.8, show(HAIRLINE)], [6.6, show(RINGS)], [9.6, show(CREEPS)], [12.0, () => (hot = -1)], [12.8, () => table.flickBy(1)]];
-let tourT = 0, tourOn = !reduced, tourStep = 0;
-function stopTour() { if (tourOn && tourStep > 0) hot = -1; tourOn = false; tourT = 0; tourStep = 0; }
+/* ---- the tour: a tap at a random spot on the field, every five seconds ----------- */
+const TOUR_EVERY = 5;
+let tourT = 0, tourOn = !reduced;
+function tourTap() {
+  const n = Math.floor(Math.random() * NC), c = CELLS[n];
+  hot = n; pluckAll(c.cx, c.cy);
+}
+function stopTour() { if (tourOn) hot = -1; tourOn = false; tourT = 0; }
 function stepTour(dt) {
   if (reduced) return;
   if (!tourOn) {
     idle += dt;
     if (hover >= 0) idle = 0;
-    if (!dragging && idle > 8 && awake === 0 && table.state().mode === 'rest') { tourOn = true; tourT = 0; tourStep = 0; }
+    if (!dragging && idle > 8 && table.state().mode === 'rest') { tourOn = true; tourT = TOUR_EVERY - 0.6; }
     return;
   }
-  if (tourStep === TOUR.length) { if (table.state().mode === 'rest') { tourT = 0; tourStep = 0; } else return; }
   tourT += dt;
-  while (tourStep < TOUR.length && tourT >= TOUR[tourStep][0]) TOUR[tourStep++][1]();
+  if (tourT >= TOUR_EVERY) { tourT -= TOUR_EVERY; tourTap(); }
 }
+tourT = TOUR_EVERY - 1;                                // the first tap comes a second after the page opens
 
 // ?turn=n turns n quarters, ?hot=n chooses cell n, ?pluck=t shows the field t s after a pluck
 {
