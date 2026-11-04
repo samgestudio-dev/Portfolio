@@ -49,7 +49,7 @@ export const PRINT = { on: false, threshold: 0.62, range: 0.4, dot: 3, mode: 'am
 export function createObject(kind, { onOpen, colors }) {
   const table = createTurntable({ tour: false });
   const o = { kind, table, hover: false, dirty: true, el: null, stage: null, open: false };
-  let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0, pxPerUnit = 1;
+  let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0, pxPerUnit = 1, dotPitch = 1.2;
   
 
   /* ---- the drawing surface ---- */
@@ -240,7 +240,7 @@ export function createObject(kind, { onOpen, colors }) {
     // every wall seen but turned from it is laid in ink, right after its own solid
     const c = Math.cos(C_.az), sn = Math.sin(C_.az), right = [c, -sn, 0];
     const L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
-    setLight(L, { mode: 'solid' });          // the phone, cabinet and atlas: shadowed walls in plain ink
+    setLight(L, { mode: 'tone', pitch: dotPitch });   // the phone, cabinet and atlas: walls turning from the light go through dots into ink
     const list = kind === 'product' ? phone(P, T, layers.map(L => Math.max(0, L.x)), lift.map(L => L.x), hot)
       : kind === 'system' ? cabinet(P, T, drawers.map(d => Math.max(0, d.x)), hot)
       : atlas(P, T, CELLS.map((c, n) => ATLAS_REST[n] + AMP * knee(SUM[n])), -1);
@@ -264,6 +264,8 @@ export function createObject(kind, { onOpen, colors }) {
       const vb = svg.viewBox.baseVal, r = o.stage.getBoundingClientRect();
       const k = Math.min(r.width / vb.width, r.height / vb.height) || 1;     // screen px per drawing unit
       pxPerUnit = k;
+      // the shadows' dot screen: about 5 px a dot as seen opened, so a panel's is as fine for its size
+      dotPitch = 5 / Math.max(0.1, Math.min((innerWidth > 900 ? innerWidth * 0.52 - 52 : innerWidth - 32) / vb.width, (innerWidth > 900 ? innerHeight - 132 : innerHeight * 0.46 - 64) / vb.height));
       // the grain belongs to the drawing, not the screen: tuned on the opened page (about
       // 2.6 px of wobble there) and scaled with the drawing, so a panel's smaller drawing
       // shakes as little, for its size, as the big one does

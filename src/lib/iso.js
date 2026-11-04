@@ -94,7 +94,9 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 import { BLUE, BLUE_N } from './bluenoise.js';
 let LIGHT = null, SHADES = null, PITCH = 4, MODE = 'am', DOT_R = 0.36;
 // mode 'solid': the shadowed walls in plain ink; 'am': dots sized by tone, on a 45° screen;
-// 'fm': one size, kept where a blue-noise rank is under the tone
+// 'fm': one size, kept where a blue-noise rank is under the tone; 'tone': a wall turning from
+// the light passes through a screen of dots that grow, then closes into plain ink, so no
+// wall ever turns black all at once (each wall's dots even, as a printed flat tint is)
 export function setLight(L, { pitch = 4, mode = 'am', dotR = 0.36 } = {}) { LIGHT = L; PITCH = pitch; MODE = mode; DOT_R = dotR; SHADES = L ? new Map() : null; }
 export const shadeOf = sil => SHADES?.get(sil) || '';
 const R45 = Math.SQRT1_2;
@@ -127,12 +129,34 @@ function halftone(quads) {
   }
   return d;
 }
+// 'tone': how dark a wall is from how it faces the light — none at TONE_LIT, full at
+// TONE_INK, eased between — and how it is printed: an even screen of dots, then plain ink
+const TONE_LIT = 0.16, TONE_INK = -0.14, TONE_SOLID = 0.9;
+const toneOf = c => { const t = Math.max(0, Math.min(1, (TONE_LIT - c) / (TONE_LIT - TONE_INK))); return t * t * (3 - 2 * t); };
+function tint(quads) {
+  let solid = '', dots = '';
+  for (const q of quads) {
+    if (q.tone < 0.04) continue;
+    if (q.tone >= TONE_SOLID) { solid += poly(q.pg); continue; }
+    // dots whose middles fall in this strip of wall, all one size: the strip's tone
+    const g = q.pg.map(toGrid), r = Math.sqrt(q.tone / TONE_SOLID) * 0.56 * PITCH;
+    const i0 = Math.floor(Math.min(...g.map(p => p[0]))), i1 = Math.ceil(Math.max(...g.map(p => p[0])));
+    const j0 = Math.floor(Math.min(...g.map(p => p[1]))), j1 = Math.ceil(Math.max(...g.map(p => p[1])));
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const p = fromGrid(i + 0.5, j + 0.5);
+      if (!inside(p, q.pg)) continue;
+      dots += `M${r2(p[0] - r)} ${r2(p[1])}a${r2(r)} ${r2(r)} 0 1 0 ${r2(2 * r)} 0a${r2(r)} ${r2(r)} 0 1 0 ${r2(-2 * r)} 0`;
+    }
+  }
+  return solid + dots;
+}
 export function prism3(P, T, f, ring, inner, w0, w1) {
   const pr = w => ring.map(q => P(...at(f, q.u, q.v, w)));
   const sil = w0 === w1 ? poly(pr(w0)) : poly(hull(pr(w0).concat(pr(w1))));
   if (LIGHT && w0 !== w1) {
     const nrm = q => [f.U[0] * q.nu + f.V[0] * q.nv, f.U[1] * q.nu + f.V[1] * q.nv, f.U[2] * q.nu + f.V[2] * q.nv];
-    const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < -0.04; };
+    const lim = MODE === 'tone' ? TONE_LIT : -0.04;
+    const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < lim; };
     const r = run(ring, dark);
     if (r.length > 1) {
       // the cap the viewer sees is the wall's top edge; the other end, its foot
@@ -142,11 +166,11 @@ export function prism3(P, T, f, ring, inner, w0, w1) {
         const a = r[k], b = r[k + 1];
         const ta = P(...at(f, a.u, a.v, wt)), tb = P(...at(f, b.u, b.v, wt)), bb = P(...at(f, b.u, b.v, wb)), ba = P(...at(f, a.u, a.v, wb));
         const n = nrm({ nu: (a.nu + b.nu) / 2, nv: (a.nv + b.nv) / 2 }), l = Math.hypot(...n) || 1;
-        quads.push({ pg: [ta, tb, bb, ba], top: ta, ax: [ba[0] - ta[0], ba[1] - ta[1]], dark: Math.min(1, -dot(n, LIGHT) / l / 0.7) });
+        quads.push({ pg: [ta, tb, bb, ba], top: ta, ax: [ba[0] - ta[0], ba[1] - ta[1]], dark: Math.min(1, -dot(n, LIGHT) / l / 0.7), tone: toneOf(dot(n, LIGHT) / l) });
       }
       const d = MODE === 'solid'
         ? poly(r.map(q => P(...at(f, q.u, q.v, wt))).concat(r.map(q => P(...at(f, q.u, q.v, wb))).reverse()))
-        : halftone(quads);
+        : MODE === 'tone' ? tint(quads) : halftone(quads);
       if (d) SHADES.set(sil, d);
     }
   }
