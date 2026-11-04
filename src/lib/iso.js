@@ -131,7 +131,7 @@ function halftone(quads) {
 }
 // 'tone': how dark a wall is from how it faces the light — none at TONE_LIT, full at
 // TONE_INK, eased between — and how it is printed: an even screen of dots, then plain ink
-const TONE_LIT = 0.16, TONE_INK = -0.14, TONE_SOLID = 0.9;
+const TONE_LIT = 0.2, TONE_INK = -0.18, TONE_SOLID = 0.9;
 const toneOf = c => { const t = Math.max(0, Math.min(1, (TONE_LIT - c) / (TONE_LIT - TONE_INK))); return t * t * (3 - 2 * t); };
 function tint(quads) {
   let solid = '', dots = '';
@@ -150,12 +150,30 @@ function tint(quads) {
   }
   return solid + dots;
 }
+// 'sweep': the line between light and shadow crosses each strip of wall as it turns, a hard
+// edge in plain ink: each strip is inked as far across as its tone, from the side of the
+// darker neighbour, so the shadow comes round a corner and on across the wall
+const mix2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+function sweep(quads) {
+  let d = '';
+  quads.forEach((q, k) => {
+    const t = Math.min(1, q.tone / TONE_SOLID);
+    if (t < 0.02) return;
+    const [ta, tb, bb, ba] = q.pg;
+    if (t >= 0.995) { d += poly(q.pg); return; }
+    const before = quads[k - 1]?.tone ?? 0, after = quads[k + 1]?.tone ?? 0;
+    d += before >= after
+      ? poly([ta, mix2(ta, tb, t), mix2(ba, bb, t), ba])          // in from the a side
+      : poly([mix2(tb, ta, t), tb, bb, mix2(bb, ba, t)]);         // in from the b side
+  });
+  return d;
+}
 export function prism3(P, T, f, ring, inner, w0, w1) {
   const pr = w => ring.map(q => P(...at(f, q.u, q.v, w)));
   const sil = w0 === w1 ? poly(pr(w0)) : poly(hull(pr(w0).concat(pr(w1))));
   if (LIGHT && w0 !== w1) {
     const nrm = q => [f.U[0] * q.nu + f.V[0] * q.nv, f.U[1] * q.nu + f.V[1] * q.nv, f.U[2] * q.nu + f.V[2] * q.nv];
-    const lim = MODE === 'tone' ? TONE_LIT : -0.04;
+    const lim = MODE === 'tone' || MODE === 'sweep' ? TONE_LIT : -0.04;
     const dark = q => { const n = nrm(q); return dot(n, T) > 0.02 && dot(n, LIGHT) < lim; };
     const r = run(ring, dark);
     if (r.length > 1) {
@@ -170,7 +188,7 @@ export function prism3(P, T, f, ring, inner, w0, w1) {
       }
       const d = MODE === 'solid'
         ? poly(r.map(q => P(...at(f, q.u, q.v, wt))).concat(r.map(q => P(...at(f, q.u, q.v, wb))).reverse()))
-        : MODE === 'tone' ? tint(quads) : halftone(quads);
+        : MODE === 'tone' ? tint(quads) : MODE === 'sweep' ? sweep(quads) : halftone(quads);
       if (d) SHADES.set(sil, d);
     }
   }

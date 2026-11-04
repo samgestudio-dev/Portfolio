@@ -240,7 +240,7 @@ export function createObject(kind, { onOpen, colors }) {
     // every wall seen but turned from it is laid in ink, right after its own solid
     const c = Math.cos(C_.az), sn = Math.sin(C_.az), right = [c, -sn, 0];
     const L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
-    setLight(L, { mode: 'tone', pitch: dotPitch });   // the phone, cabinet and atlas: walls turning from the light go through dots into ink
+    setLight(L, { mode: 'sweep' });   // the phone, cabinet and atlas: the shadow's edge sweeps across each wall as it turns
     const list = kind === 'product' ? phone(P, T, layers.map(L => Math.max(0, L.x)), lift.map(L => L.x), hot)
       : kind === 'system' ? cabinet(P, T, drawers.map(d => Math.max(0, d.x)), hot)
       : atlas(P, T, CELLS.map((c, n) => ATLAS_REST[n] + AMP * knee(SUM[n])), -1);
