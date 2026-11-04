@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { createTurntable } from '../lib/turntable.js';
 import { createHairlinePass } from '../lib/hairline-pass.js';
-import { Cam, proj, toward, circ, inside, setLight, shadeOf } from '../lib/iso.js';
+import { Cam, proj, toward, circ, inside } from '../lib/iso.js';
 import { fillKeyed } from '../lib/keyed-fill.js';
 import { phone, cabinet, CABINET_REST, CABINET_OUT, atlas, restHull, CELLS, ATLAS_REST, REACH } from './draw.js';
 import { AMP, CAP } from '../atlas/scene.js';
@@ -31,22 +31,11 @@ function spring(s, dt) {
   return true;
 }
 const sp = x => ({ x, v: 0, t: x });
-const norm3 = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
-// David's silkscreen: the light (view space) from the upper left, a little in front
-export const PRINT = { on: true, threshold: 0.62, range: 0.4, dot: 3, mode: 'am', dotR: 0.36, form: 0.15, grain: 1, grainSize: 5, light: [0.7, 0.45, 0.32], blur: 6, hollow: 1.1 };   // his shadows in fine halftone dots, lit from the upper right
-// ?light=x,y,z (view space) and ?form=k (how much of the model's own frontal shading is mixed in), for tuning
-{ const m = location.search.match(/[?&]light=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)/); if (m) PRINT.light = [+m[1], +m[2], +m[3]]; }
-{ const m = location.search.match(/[?&]form=([\d.]+)/); if (m) PRINT.form = +m[1]; }
-// ?dots=am,4.5 or ?dots=fm,3.5[,0.36]: the screen and its pitch in px (and the FM dot's size)
-{ const m = location.search.match(/[?&]dots=(am|fm),([\d.]+)(?:,([\d.]+))?/); if (m) Object.assign(PRINT, { mode: m[1], dot: +m[2], ...(m[3] ? { dotR: +m[3] } : {}) }); }
-// ?print=threshold,range,dot,hollow overrides, for tuning by eye
-{ const m = location.search.match(/[?&]print=([\d.]+),([\d.]+),([\d.]+),([\d.]+)/); if (m) Object.assign(PRINT, { threshold: +m[1], range: +m[2], dot: +m[3], hollow: +m[4] }); }
 
 export function createObject(kind, { onOpen, colors }) {
   const table = createTurntable({ tour: false });
   const o = { kind, table, hover: false, dirty: true, el: null, stage: null, open: false };
-  let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0, pxPerUnit = 1;
-  
+  let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0;
 
   /* ---- the drawing surface ---- */
   if (kind === 'art') {
@@ -83,12 +72,7 @@ export function createObject(kind, { onOpen, colors }) {
     svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('class', 'obj-svg');
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    // the print's grain, its own per object: sized in screen pixels, so it stays as fine
-    // seen big as seen small (an SVG filter counts in the drawing's own units)
-    const fid = `print-${kind}`;
-    svg.insertAdjacentHTML('afterbegin', `<defs><filter id="${fid}" x="-4%" y="-4%" width="108%" height="108%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" numOctaves="2" seed="7" result="warp"/><feDisplacementMap in="SourceGraphic" in2="warp" xChannelSelector="R" yChannelSelector="G"/></filter></defs>`);
     g = document.createElementNS(NS, 'g'); svg.appendChild(g);
-    g.setAttribute('filter', `url(#${fid})`);
     o.el = svg;
     // the frame: the object's whole reach at any turn, so it never has to be refitted
     const R = REACH[kind], P = proj(Cam(45, 0.5, 1)), pts = [];
@@ -178,21 +162,9 @@ export function createObject(kind, { onOpen, colors }) {
     }
     setAz();
     const P = proj(C_), T = toward(C_);
-    // printed: one light from the upper left, in front, fixed to the viewer as a flash is;
-    // every wall seen but turned from it is laid in ink, right after its own solid
-    const c = Math.cos(C_.az), sn = Math.sin(C_.az), right = [c, -sn, 0];
-    const L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
-    setLight(L, { mode: 'solid' });          // the phone, cabinet and atlas: shadowed walls in plain ink
-    const list = kind === 'product' ? phone(P, T, layers.map(L => Math.max(0, L.x)))
-      : kind === 'system' ? cabinet(P, T, drawers.map(d => Math.max(0, d.x)))
-      : atlas(P, T, CELLS.map((c, n) => ATLAS_REST[n] + AMP * knee(SUM[n])), -1);
-    const out = [];
-    for (const e of list) {
-      out.push(e);
-      if (e[0] === 'sil' || e[0] === 'sil hi') { const sh = shadeOf(e[1]); if (sh) out.push(['shade', sh, e[2] + '-sh']); }
-    }
-    setLight(null);
-    fillKeyed(g, out);
+    if (kind === 'product') fillKeyed(g, phone(P, T, layers.map(L => Math.max(0, L.x))));
+    else if (kind === 'system') fillKeyed(g, cabinet(P, T, drawers.map(d => Math.max(0, d.x))));
+    else fillKeyed(g, atlas(P, T, CELLS.map((c, n) => ATLAS_REST[n] + AMP * knee(SUM[n])), -1));
   }
 
   /* ---- where it lives: a panel, or the opened page ---- */
@@ -202,13 +174,6 @@ export function createObject(kind, { onOpen, colors }) {
     resize();
   }
   function resize() {
-    if (svg && o.stage) {
-      const vb = svg.viewBox.baseVal, r = o.stage.getBoundingClientRect();
-      const k = Math.min(r.width / vb.width, r.height / vb.height) || 1;     // screen px per drawing unit
-      pxPerUnit = k;
-      svg.querySelector('feTurbulence').setAttribute('baseFrequency', (0.55 / k).toFixed(4));
-      svg.querySelector('feDisplacementMap').setAttribute('scale', (2.6 / k).toFixed(3));
-    }
     if (!o.stage || kind !== 'art') { o.dirty = true; return; }
     const r = o.stage.getBoundingClientRect(), w = Math.max(1, r.width), h = Math.max(1, r.height);
     const dpr = Math.min(window.devicePixelRatio || 1, 2) * 1.25;
@@ -222,7 +187,6 @@ export function createObject(kind, { onOpen, colors }) {
     pass.setScale((cam3.right - cam3.left) / buf.x);
     // seen big, look for folds over a longer reach so his face keeps its lines
     pass.setReach(Math.min(3, Math.max(1, Math.sqrt(buf.y / 900))), 0.5);
-    pass.setPrint(PRINT);
     o.dirty = true;
   }
 

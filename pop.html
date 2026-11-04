@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f3ede1" />
-    <title>Pop Art v2</title>
+    <title>Sam — Four Ways of Making</title>
     <meta name="claude:viewport-fit-sides" content="cover" />
     <meta name="description" content="Sam's portfolio: interfaces, systems, motion and art, as four objects in four colours." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -79,8 +79,7 @@
       .turning { cursor: grabbing; }
 
       /* the drawings in ink: Hairline's solids, printed */
-      .obj-svg { filter: drop-shadow(5px 5px 0 var(--ink)); }
-      .obj-svg .shade { fill: var(--ink); stroke: none; }
+      .obj-svg g { filter: drop-shadow(5px 5px 0 var(--ink)); }
       .obj-svg path { fill: var(--white); stroke: var(--ink); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
       .obj-svg .cr { fill: none; stroke-width: 1; }
       .obj-svg .sil.ui { stroke-width: 1.1; }
