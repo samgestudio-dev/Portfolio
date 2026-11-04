@@ -317,18 +317,54 @@ async function request(id) {
   } finally { busy = false; }
   if (want !== undefined) { const w = want; want = undefined; request(w); }
 }
-// another category, from an opened one: one camera move on the pages themselves — this page
-// pulls back a little (its black edges show), slides away as the next slides in beside it,
-// and the next comes up to fill the screen. The page leaving is a still copy of itself; the
-// room underneath has already become the next one.
+// another category, from an opened one: one camera over a row of pages. The pages stand
+// side by side, a black gap between (the previous one, this one, the next, the one after);
+// the camera pulls back so the neighbours show at both edges, travels along the row to the
+// next page, and comes in on it. Every page moves together; only the one arrived at is live,
+// the others are still copies filled for their own category.
+const GAP = 16, PULL = 0.86;
+function pageFor(d) {
+  const p = room.cloneNode(true);
+  p.removeAttribute('id'); p.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+  p.className = `room ${d.id} still`; p.setAttribute('aria-hidden', 'true');
+  p.querySelectorAll('.ghost, .ghost-box').forEach(e => e.remove());
+  const i = DISC.indexOf(d), prev = DISC[(i + DISC.length - 1) % DISC.length], next = DISC[(i + 1) % DISC.length];
+  p.querySelector('.room-top .f-num').textContent = `${d.num} · ${d.name}`;
+  p.querySelector('.room-body .big').textContent = d.name;
+  p.querySelector('.room-body .lede').innerHTML = `<b>${esc(d.sub)}.</b> ${esc(d.lede)}`;
+  p.querySelector('.room-body .list').innerHTML = d.items.map((it, k) => rowHTML(it, k + 1)).join('');
+  const pv = p.querySelector('.step.prev'), nx = p.querySelector('.step.next');
+  pv.innerHTML = `<span class="l" aria-hidden="true">←</span><span><small>${prev.num}</small> ${esc(prev.name)}</span>`; pv.style.setProperty('--c', prev.c);
+  nx.innerHTML = `<span><small>${next.num}</small> ${esc(next.name)}</span><span class="r" aria-hidden="true">→</span>`; nx.style.setProperty('--c', next.c);
+  const stage = p.querySelector('.room-stage');
+  stage.querySelector('.obj-svg, .obj-canvas')?.remove();
+  const pic = d.obj.snapshot();
+  if (pic.tagName === 'CANVAS') pic.style.objectFit = 'contain';
+  stage.appendChild(pic);
+  gsap.set(p, { clearProps: 'transform', autoAlpha: 1, clipPath: FULL });
+  return p;
+}
 async function switchTo(id) {
-  const from = byId[current], to = byId[id];
-  const di = (DISC.indexOf(to) - DISC.indexOf(from) + DISC.length) % DISC.length, dir = di === DISC.length - 1 ? -1 : 1;
-  const still = room.cloneNode(true);
-  still.removeAttribute('id'); still.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
-  still.classList.add('still'); still.setAttribute('aria-hidden', 'true');
-  still.querySelector('.room-stage .obj-svg, .room-stage .obj-canvas')?.replaceWith(from.obj.snapshot());
-  room.before(still);                       // beneath the room, which covers it as it comes up
+  const from = byId[current], to = byId[id], n = DISC.length;
+  const fi = DISC.indexOf(from), di = (DISC.indexOf(to) - fi + n) % n, dir = di === n - 1 ? -1 : 1;
+  // the row: pages k = -1 … 2 (or -2 … 1 going back) around this one; this one a still of
+  // itself, the one arrived at the live room, the rest stills of their categories
+  const ks = dir > 0 ? [-1, 0, 1, 2] : [-2, -1, 0, 1];
+  const pages = [];
+  for (const k of ks) {
+    if (k === dir) continue;
+    const d = DISC[(fi + k + n * 4) % n];
+    let p;
+    if (k === 0) {
+      p = room.cloneNode(true);
+      p.removeAttribute('id'); p.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+      p.classList.add('still'); p.setAttribute('aria-hidden', 'true');
+      p.querySelector('.room-stage .obj-svg, .room-stage .obj-canvas')?.replaceWith(from.obj.snapshot());
+    } else p = pageFor(d);
+    room.before(p);
+    pages.push({ el: p, k });
+  }
+  pages.push({ el: room, k: dir });
   roomBack.hidden = false;
   // the room becomes the next one underneath: the old object home to its frame, the new one in
   from.obj.open = false; from.obj.setHover(false); from.obj.mount(from.stage);
@@ -341,19 +377,23 @@ async function switchTo(id) {
   gsap.set([to.obj.el, ...SHARED()], { clearProps: 'all' });
   // the strip, unseen beneath, moves to the next frame, so Back closes onto it
   stopGlide(); strip[axis()] = targetOf(FRAMES.indexOf(to.frame));
-  const s = 0.88, shift = (innerWidth * s + 16) * dir, R = 'inset(0px 0px 0px 0px round 16px)';
-  gsap.set([room, still], { transformOrigin: '50% 50%' });
-  gsap.set(still, { clipPath: FULL, x: 0, scale: 1 });
-  gsap.set(room, { clipPath: R, x: shift, scale: s });
-  const tl = gsap.timeline({ defaults: { ease: 'hair' } })
-    // it eases back from rest (never a jump), and is still settling as the slide takes it
-    .to(still, { scale: s, clipPath: R, duration: 0.42, ease: 'power2.inOut' }, 0)
-    .to([still, room], { x: `-=${shift}`, duration: 0.54, ease: 'glide' }, 0.26)
-    .to(room, { scale: 1, clipPath: FULL, duration: 0.44, ease: 'power2.inOut' }, 0.7)
+  // the camera: how far back (sc) and where along the row (at, in pages); each page placed from it
+  const step = innerWidth + GAP, cam = { sc: 1, at: 0 };
+  const place_ = () => {
+    const r = ((1 - cam.sc) / (1 - PULL)) * 16;
+    for (const { el, k } of pages) gsap.set(el, { x: (k - cam.at) * step * cam.sc, scale: cam.sc, transformOrigin: '50% 50%', clipPath: `inset(0px 0px 0px 0px round ${r.toFixed(2)}px)` });
+  };
+  place_();
+  const tl = gsap.timeline({ defaults: { ease: 'hair' }, onUpdate: place_ })
+    // back from rest (never a jump), still settling as the camera sets off along the row
+    .to(cam, { sc: PULL, duration: 0.42, ease: 'power2.inOut' }, 0)
+    .to(cam, { at: dir, duration: 0.56, ease: 'glide' }, 0.24)
+    .to(cam, { sc: 1, duration: 0.44, ease: 'power2.inOut' }, 0.7)
     .from([...$('room-list').children], { y: 14, autoAlpha: 0, duration: 0.4, stagger: 0.04, clearProps: 'all' }, 0.72)
     .add(() => {
-      still.remove(); roomBack.hidden = true;
-      gsap.set(room, { clearProps: 'transform' });
+      for (const { el } of pages) if (el !== room) el.remove();
+      roomBack.hidden = true;
+      gsap.set(room, { clearProps: 'transform', clipPath: FULL });
       to.obj.setHover(true);
     });
   history.replaceState(null, '', '#' + id);
