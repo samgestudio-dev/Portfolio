@@ -1,7 +1,7 @@
 import { createTurntable } from '../lib/turntable.js';
 // three.js is for David alone, and the heaviest thing here: fetched after the page is up
 let THREE;
-const davidKit = () => Promise.all([import('three'), import('three/examples/jsm/loaders/GLTFLoader.js'), import('three/examples/jsm/libs/meshopt_decoder.module.js'), import('../lib/hairline-pass.js')]);
+const davidKit = () => Promise.all([import('three'), import('three/examples/jsm/loaders/GLTFLoader.js'), import('three/examples/jsm/libs/meshopt_decoder.module.js'), import('../lib/hairline-pass.js'), import('./david-real.js')]);
 const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 700 }) : setTimeout(f, 120));
 import { Cam, proj, toward, circ, inside, setLight, shadeOf } from '../lib/iso.js';
 import { fillKeyed } from '../lib/keyed-fill.js';
@@ -50,7 +50,13 @@ export function createObject(kind, { onOpen, colors }) {
   const table = createTurntable({ tour: false });
   const o = { kind, table, hover: false, dirty: true, el: null, stage: null, open: false };
   let svg, g, canvas, renderer, pass, scene3, cam3, spinMesh, davidExtent, drift = 0, pxPerUnit = 1, dotPitch = 1.2;
-  let head = null, zoom = 0, vw = 1, vh = 1, bufW = 1;
+  let head = null, zoom = 0, vw = 1, vh = 1, bufW = 1, bufH = 1, real = null, headZ = -6, wantHi = null;
+  // close up he turns to the pose of the photograph his close-up is after (and drag and the
+  // pointer still turn him from there); his line drawing gives way to the real statue
+  const POSE = +(location.search.match(/[?&]pose=(-?[\d.]+)/)?.[1] ?? 0.8);   // (?pose= to try others)
+  const realOf = z => { const t = Math.min(1, Math.max(0, (z - 0.3) / 0.6)); return t * t * (3 - 2 * t); };
+  const wrapPi = a => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
+  const rotY = () => { const base = drift + spin; return base + wrapPi(POSE - base) * zoom + table.theta + look.x; };
   
 
   /* ---- the drawing surface ---- */
@@ -59,7 +65,7 @@ export function createObject(kind, { onOpen, colors }) {
     canvas.className = 'obj-canvas';
     o.el = canvas;
     idle(async () => {
-      const [three, { GLTFLoader }, { MeshoptDecoder }, { createHairlinePass }] = await davidKit();
+      const [three, { GLTFLoader }, { MeshoptDecoder }, { createHairlinePass }, { createRealLayers }] = await davidKit();
       THREE = three;
       renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, premultipliedAlpha: false });
       pass = createHairlinePass(renderer, { transparent: true });
@@ -95,6 +101,22 @@ export function createObject(kind, { onOpen, colors }) {
         let n = 0, x = 0, z = 0, y0 = Infinity, y1 = -Infinity;
         for (let k = 0; k < pos.count; k++) { const y = pos.getY(k); if (y > top - 0.11) { x += pos.getX(k); z += pos.getZ(k); n++; y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }
         head = { x: x / n, z: z / n, y: (y0 + y1) / 2 - 0.012, r: 0.075 };
+        real = createRealLayers(THREE, renderer, geo);
+        real.resize(bufW, bufH);
+        real.setLayers({ real: realOf(zoom) });
+        // on a computer his close-up is drawn from the finer scan (200k triangles), fetched the
+        // first time it is wanted; the mid mesh stands in until it arrives
+        if (matchMedia('(min-width: 861px) and (hover: hover)').matches) wantHi = () => {
+          wantHi = null;
+          Promise.resolve(window.DAVID_HI_URL_F ? window.DAVID_HI_URL_F() : './models/david/david-hi.glb').then(u => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(u, g2 => {
+            let hg; g2.scene.traverse(m => { if (m.isMesh && !hg) { m.updateWorldMatrix(true, false); hg = m.geometry.clone().applyMatrix4(m.matrixWorld); } });
+            if (!hg.attributes.normal) hg.computeVertexNormals();
+            real.setGeometry(hg); o.dirty = true;
+          }));
+        };
+        if (/[?&]debug\b/.test(location.search)) window.__david = { geo, head, top, real, o,
+          // the point on him under a point of the page (client px), for placing the paint
+          pick: (x, y) => { const r = canvas.getBoundingClientRect(); return real.pick(((x - r.left) / r.width) * 2 - 1, -(((y - r.top) / r.height) * 2 - 1), cam3, rotY()); } };
         frameCam();
         o.dirty = true; o.loaded = true;
       });
@@ -212,6 +234,8 @@ export function createObject(kind, { onOpen, colors }) {
     // every object turns slowly on its own, the way the strip last moved (David a little faster when hovered)
     if (!reduced) { if (dir.x !== dir.t || dir.v) spring(dir, dt); drift += dt * (kind === 'art' ? (o.hover ? 0.5 : 0.22) : 0.16) * dir.x; moved = true; }
     if (kind === 'art' && !reduced && (look.x !== look.t || look.v)) spring(look, dt);
+    // the yellow line boils: a new hand 24 times a second, while it shows
+    if (real && real.layers.outline > 0) { const f = Math.floor(clock * 24); if (f !== o._boil) { o._boil = f; real.setBoil(f); moved = true; } }
     if (spinV) { spin += spinV * dt; spinV *= Math.exp(-2.6 * dt); if (Math.abs(spinV) < 1e-3) spinV = 0; moved = true; }
     if (kind === 'product') for (const L of lift) if (L.x !== L.t || L.v) { spring(L, dt); moved = true; }
     if (kind === 'product') for (const L of layers) { if (clock >= L.due) { L.t = L.to; L.due = Infinity; } if (L.x !== L.t || L.v) { spring(L, dt); moved = true; } }
@@ -248,8 +272,11 @@ export function createObject(kind, { onOpen, colors }) {
     if (kind === 'art') {
       if (!pass) return;
       if (zoom > 0) frameCam();
-      spinMesh.rotation.y = table.theta + drift + spin + look.x;
-      pass.render(scene3, cam3, -1);
+      const ry = rotY();
+      spinMesh.rotation.y = ry;
+      const drewLine = !real || real.layers.real < 0.999;
+      if (drewLine) pass.render(scene3, cam3, -1);
+      real?.render(cam3, ry, drewLine);
       return;
     }
     setAz();
@@ -308,7 +335,7 @@ export function createObject(kind, { onOpen, colors }) {
     renderer.setPixelRatio(dpr); renderer.setSize(vw, vh, false);
     const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
     pass.setSize(buf.x, buf.y, renderer.getPixelRatio());
-    bufW = buf.x;
+    bufW = buf.x; bufH = buf.y; real?.resize(bufW, bufH);
     // seen big, look for folds over a longer reach so his face keeps its lines
     pass.setReach(Math.min(3, Math.max(1, Math.sqrt(buf.y / 900))), 0.5);
     pass.setPrint(PRINT);
@@ -321,23 +348,33 @@ export function createObject(kind, { onOpen, colors }) {
     if (!renderer || !davidExtent) return;
     const bs = davidExtent.getSize(new THREE.Vector2()), bc = davidExtent.getCenter(new THREE.Vector2());
     let cx = bc.x, cy = bc.y, sx = bs.x, sy = bs.y;
+    // the camera sinks as it comes in: about 5° up at all of him, about 17° up at his head
+    const el = -0.085 - 0.215 * zoom, az = Math.PI / 4, dist = 6;
+    cam3.position.set(Math.sin(az) * Math.cos(el) * dist, 0.5 + Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist);
+    cam3.lookAt(0, 0.5, 0); cam3.updateMatrixWorld();
     if (zoom > 0 && head) {
-      const a = table.theta + drift + spin + look.x, ca = Math.cos(a), sa = Math.sin(a);
+      const a = rotY(), ca = Math.cos(a), sa = Math.sin(a);
       const hp = new THREE.Vector3(head.x * ca + head.z * sa, head.y, -head.x * sa + head.z * ca).applyMatrix4(cam3.matrixWorldInverse);
-      const hs = head.r * 2.3, t = zoom;
+      headZ = hp.z;
+      const hs = head.r * 6.2, t = zoom;
       // the size eased on a log scale, so the push in feels even all the way
       sx = Math.exp(Math.log(sx) + (Math.log(hs) - Math.log(sx)) * t); sy = Math.exp(Math.log(sy) + (Math.log(hs) - Math.log(sy)) * t);
-      // his head high on the page (its middle about 40% down), the bust running on below
-      const s0 = Math.min(vw / sx, vh / sy) * 0.92, up = (0.5 - 0.4) * (vh / s0);
-      cx += (hp.x - cx) * t; cy += (hp.y - up - cy) * t;
+      // his head high on the page (its middle about 30% down) and, on a computer, in the right
+      // half, his bust running on below and out under the words
+      const s0 = Math.min(vw / sx, vh / sy) * 0.92, up = (0.5 - 0.26) * (vh / s0), side = vw > 860 ? (0.72 - 0.5) * (vw / s0) : 0;
+      cx += (hp.x - side - cx) * t; cy += (hp.y - up - cy) * t;
     }
     const s = Math.min(vw / sx, vh / sy) * 0.92;
     cam3.left = cx - vw / 2 / s; cam3.right = cx + vw / 2 / s; cam3.top = cy + vh / 2 / s; cam3.bottom = cy - vh / 2 / s;
     cam3.updateProjectionMatrix();
+    // the real layer's own camera sees the same, in perspective as it comes in on his head
+    if (real) real.frame(cam3, headZ, Math.min(1, Math.max(0, (zoom - 0.2) / 0.8)));
     pass.setScale((cam3.right - cam3.left) / bufW);
     o.dirty = true;
   }
-  function setZoom(z) { if (kind !== 'art' || z === zoom) return; zoom = z; frameCam(); }
+  function setZoom(z) { if (kind !== 'art' || z === zoom) return; zoom = z; if (z > 0) wantHi?.(); real?.setLayers({ real: realOf(z) }); frameCam(); }
+  // the close-up's other layers (paint, outline), each 0…1, for a transition to bring in
+  function setLayers(v) { if (!real) return; real.setLayers(v); o.dirty = true; }
 
   /* ---- hands: drag turns it, a tap opens it ---- */
   let down = null, dragging = false, lastX = 0, lastT = 0;
@@ -381,6 +418,6 @@ export function createObject(kind, { onOpen, colors }) {
     if (pass) { o.dirty = true; draw(); c.getContext('2d').drawImage(canvas, 0, 0); }
     return c;
   }
-  Object.assign(o, { step: dt => step(dt, { dragging }), draw, mount, resize, bind, setHover, wave, nudge, aspect, away, snapshot, setZoom });
+  Object.assign(o, { step: dt => step(dt, { dragging }), draw, mount, resize, bind, setHover, wave, nudge, aspect, away, snapshot, setZoom, setLayers });
   return o;
 }
