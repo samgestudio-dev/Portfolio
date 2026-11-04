@@ -333,6 +333,18 @@ function boxAt(r) {
 // a way on): the box alone travels, its hard shadow settling to the button's
 const INK = '#141412';
 function chromeBox(r, sh) { const b = boxAt(r); gsap.set(b, { boxShadow: `${sh}px ${sh}px 0 ${INK}`, zIndex: 3 }); return b; }
+// the film-strip's box, split in two: each half cut at the strip's middle until it has left it,
+// so while they overlap they read as one box (no border or shadow of one over the other),
+// stretching, then parting cleanly into two
+function splitClip(L, Rb, mid) {
+  const cut = () => {
+    const lx = +gsap.getProperty(L, 'left'), lw = +gsap.getProperty(L, 'width'), rx = +gsap.getProperty(Rb, 'left');
+    L.style.clipPath = `inset(-12px ${Math.max(-12, lx + lw - mid).toFixed(1)}px -12px -12px)`;
+    Rb.style.clipPath = `inset(-12px -12px -12px ${Math.max(-12, mid - rx).toFixed(1)}px)`;
+  };
+  cut();
+  return cut;
+}
 const SHARED = () => [roomH, roomLede, roomNum, roomHint, back, prevB, nextB, ...$('room-list').children];
 
 // ask for a frame (or none): one move runs at a time; the last ask made while busy is kept
@@ -459,10 +471,13 @@ function grow(id, { replace = false } = {}) {
   // the chrome's stand-ins: the counter and the film-strip as they are (their contents fading),
   // and their white boxes, which travel: the counter's to Back, the film-strip's, split in two,
   // to the two ways on at the page's edges
+  // (the stand-ins bare: their contents only; the travelling boxes are the boxes)
   const gCount = ghostOf(counter), gFilm = ghostOf(film);
+  gCount.classList.add('bare'); gFilm.classList.add('bare');
   const bBack = chromeBox(first.counter, 6), bPrev = chromeBox(first.film, 6), bNext = chromeBox(first.film, 6);
   gsap.set([gCount, gFilm], { zIndex: 4 });
   gsap.set([back, prevB, nextB], { autoAlpha: 0 });
+  const cutOpen = splitClip(bPrev, bNext, first.film.x + first.film.w / 2);
 
   const T = T_OPEN, tl = gsap.timeline({ defaults: { duration: T, ease: 'morph' } });
   tl.addLabel('grow', 0)
@@ -485,8 +500,8 @@ function grow(id, { replace = false } = {}) {
     .to([topBar, film], { autoAlpha: 0, duration: 0.01 }, 'grow')
     .to([gCount, gFilm], { autoAlpha: 0, duration: 0.2, ease: 'power1.in' }, 'grow')
     .to(bBack, { left: bk.x, top: bk.y, width: bk.w, height: bk.h, boxShadow: `4px 4px 0 ${INK}` }, 'grow+=0.04')
-    .to(bPrev, { left: pv.x, top: pv.y, width: pv.w, height: pv.h, boxShadow: `4px 4px 0 ${INK}` }, 'grow+=0.06')
-    .to(bNext, { left: nx.x, top: nx.y, width: nx.w, height: nx.h, boxShadow: `4px 4px 0 ${INK}` }, 'grow+=0.06')
+    .to(bPrev, { left: pv.x, top: pv.y, width: pv.w, height: pv.h, boxShadow: `4px 4px 0 ${INK}`, onUpdate: cutOpen }, 'grow+=0.06')
+    .to(bNext, { left: nx.x, top: nx.y, width: nx.w, height: nx.h, boxShadow: `4px 4px 0 ${INK}`, onUpdate: cutOpen }, 'grow+=0.06')
     // their words come in as the boxes settle
     .to([back, prevB, nextB], { autoAlpha: 1, duration: 0.3, ease: 'power1.out', stagger: 0.03 }, `grow+=${T * 0.62}`)
     // and what belongs to the page alone comes in last, one row at a time
@@ -519,14 +534,16 @@ function shrink({ quiet = false, dur = T_CLOSE } = {}) {
   // travel back and become the counter and the film-strip again, whose contents come back in
   const bBack = chromeBox(bk, 4), bPrev = chromeBox(pv, 4), bNext = chromeBox(nx, 4);
   const gCount = ghostOf(counter), gFilm = ghostOf(film);
+  gCount.classList.add('bare'); gFilm.classList.add('bare');
   gsap.set([gCount, gFilm], { zIndex: 4, autoAlpha: 0 });
+  const cutClose = splitClip(bPrev, bNext, to.film.x + to.film.w / 2);
 
   const tl = gsap.timeline({ defaults: { duration: dur, ease: 'morph' } });
   tl.addLabel('shrink', 0)
     .to([...$('room-list').children].reverse(), { y: 10, autoAlpha: 0, duration: 0.18, stagger: 0.025, ease: 'power1.in' }, 'shrink')
     .to([back, prevB, nextB], { autoAlpha: 0, duration: 0.14, ease: 'power1.in' }, 'shrink')
     .to(bBack, { left: to.counter.x, top: to.counter.y, width: to.counter.w, height: to.counter.h, boxShadow: `6px 6px 0 ${INK}` }, 'shrink+=0.04')
-    .to([bPrev, bNext], { left: to.film.x, top: to.film.y, width: to.film.w, height: to.film.h, boxShadow: `6px 6px 0 ${INK}` }, 'shrink+=0.04')
+    .to([bPrev, bNext], { left: to.film.x, top: to.film.y, width: to.film.w, height: to.film.h, boxShadow: `6px 6px 0 ${INK}`, onUpdate: cutClose }, 'shrink+=0.04')
     .to([gCount, gFilm], { autoAlpha: 1, duration: 0.24, ease: 'power1.out' }, `shrink+=${dur * 0.68}`)
     .to(room, { clipPath: inset(fr) }, 'shrink+=0.06')
     .to(roomDots, { left: fr.x, top: fr.y, width: fr.w, height: fr.h }, 'shrink+=0.06')
