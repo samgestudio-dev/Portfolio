@@ -323,9 +323,10 @@ export function createObject(kind, { onOpen, colors }) {
     });
     const up = e => {
       if (!down) return;
-      const was = dragging; down = null; dragging = false; target.classList.remove('turning');
+      const was = dragging, d0 = down; down = null; dragging = false; target.classList.remove('turning');
       if (was) { if (performance.now() - lastT > 80) table.drag(0, 0.08); table.release(); return; }
-      if (e.type === 'pointerup' && !o.open) onOpen?.(e);
+      // a tap opens it; a finger that travelled (paging the strip on a phone) does not
+      if (e.type === 'pointerup' && !o.open && Math.hypot(e.clientX - d0.x, e.clientY - d0.y) < 10) onOpen?.(e);
     };
     target.addEventListener('pointerup', up);
     target.addEventListener('pointercancel', up);

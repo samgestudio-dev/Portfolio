@@ -45,7 +45,9 @@
       .strip.gliding { scroll-snap-type: none; }
       /* sideways, the strip is snapped by GSAP (main.js), never by the browser: a browser re-snap
          after a layout change would jump to a stale frame */
-      @media (min-width: 861px) { .strip, .strip.panning { scroll-snap-type: none; } }
+      /* the strip is paged by main.js (a move past a fifth of a frame goes on, less comes back),
+         never snapped by the browser, and moved by hand on a phone too, so never scrolled natively */
+      .strip, .strip.panning { scroll-snap-type: none !important; touch-action: none; }
       .frame { position: relative; flex: 0 0 min(86vw, 1360px); height: 100%; scroll-snap-align: center; scroll-snap-stop: always; border-radius: 6px; background: var(--c, var(--paper)); overflow: hidden; isolation: isolate; }
       .frame.intro, .frame.outro { flex-basis: min(92vw, 1500px); }
       /* each frame knows where it stands (--p: -1 left … 0 centre … 1 right, --a = |p|):
