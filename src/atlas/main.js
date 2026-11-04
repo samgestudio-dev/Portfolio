@@ -1,14 +1,21 @@
 import { createTurntable, bindWheel } from '../lib/turntable.js';
-import { Cam, proj, toward, prism3, circ } from '../lib/iso.js';
+import { Cam, proj, toward, prism3, hull, inside, circ } from '../lib/iso.js';
 import { buildPlatter, PLATTER_R } from '../lib/platter-svg.js';
-import { atlas, restHeights, CELLS, EXTENT } from './scene.js';
+import { atlas, restHeights, restHull, CELLS, EXTENT, AMP, PB, KS, CS } from './scene.js';
 
 /* Motion · 02 — a spring atlas on the turntable, after Hairline's Terrain.
 
-   One model drives everything (Kaero): θ, the turntable, and one height per spring.
-   At rest each pillar is as tall as its spring takes to settle; the field is a map
-   of k across and c back. This first cut is the still: the turntable turns, the
-   pillars stand. ?hot=n shows cell n chosen; ?turn=n turns n quarters.            */
+   One model drives everything (Kaero): θ, the turntable, and for each of the 81 springs
+   its stretch x and speed v. A pillar stands at its rest height (how long its spring
+   takes to settle) plus AMP · x. Plucked, each spring is lifted and let go, and from
+   then on obeys only its own two numbers: ẍ = −k x − c ẋ, in real time.
+
+   Hover    the pillar under the pointer is lifted a little and let go; it takes the
+            bright edge and the read-out gives its k · c · ζ · settle.
+   Tap      lifts the whole field, in a wave out from where you tapped (rule 02:
+            stagger by distance); each region rings at its own rate and dies its own
+            way. Space or Pluck all do the same, out from the middle.
+   Drag     spins the turntable; a trackpad swipe too. ← → a quarter turn.          */
 
 const NS = 'http://www.w3.org/2000/svg';
 const svg = document.getElementById('stage');
@@ -43,41 +50,128 @@ function fill(g, list) {
 }
 function setAz() { C.az = (45 * Math.PI) / 180 - table.theta; }
 
-/* ---- the model -------------------------------------------------------------- */
+/* ---- the model: 81 springs -------------------------------------------------- */
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const table = createTurntable({ tour: false });
-const heights = restHeights();
-let hot = -1;
+const NC = CELLS.length, REST = restHeights();
+const X = new Float64Array(NC), V = new Float64Array(NC);
+const WAIT = new Float64Array(NC).fill(-1);            // seconds until this spring is lifted; −1 none pending
+const LIFT = new Float64Array(NC).fill(-1);            // seconds into its lift; −1 free
+const FROM = new Float64Array(NC), TO = new Float64Array(NC);
+const LIFT_S = 0.14;                                   // the lift itself: quick, then let go
+const ease = t => 1 - Math.pow(1 - t, 3);
+let awake = 0;                                         // springs not yet still: the loop sleeps at 0 (rule 07)
 
-let dragging = false, dragged = false, lastX = 0, lastT = 0, downX = 0, downY = 0;
+function pluck(n, amount, delay = 0) {
+  if (reduced) return;
+  WAIT[n] = delay; TO[n] = amount;
+}
+// the whole field, in a wave out from a point on it, a few milliseconds a millimetre
+function pluckAll(cx = 0, cy = 0) {
+  CELLS.forEach((c, n) => pluck(n, 1, Math.hypot(c.cx - cx, c.cy - cy) * 0.006));
+}
+function stepSprings(dt) {
+  awake = 0;
+  const sub = Math.max(1, Math.ceil(dt * 480)), h = dt / sub;
+  for (let n = 0; n < NC; n++) {
+    let live = false;
+    if (WAIT[n] >= 0) {
+      WAIT[n] -= dt; live = true;
+      if (WAIT[n] < 0) { WAIT[n] = -1; LIFT[n] = 0; FROM[n] = X[n]; }
+    }
+    if (LIFT[n] >= 0) {
+      LIFT[n] += dt;
+      const t = Math.min(1, LIFT[n] / LIFT_S);
+      X[n] = FROM[n] + (TO[n] - FROM[n]) * ease(t); V[n] = 0;
+      if (t >= 1) LIFT[n] = -1;
+      awake++;
+      continue;
+    }
+    if (X[n] !== 0 || V[n] !== 0) {
+      const { k, c } = CELLS[n];
+      let x = X[n], v = V[n];
+      for (let s = 0; s < sub; s++) { v += (-k * x - c * v) * h; x += v * h; }
+      if (Math.abs(x) < 0.002 && Math.abs(v) < 0.02) { x = 0; v = 0; } else live = true;
+      X[n] = x; V[n] = v;
+    }
+    if (live) awake++;
+  }
+}
+const heights = () => CELLS.map((c, n) => REST[n] + AMP * X[n]);
+
+/* ---- pointer: tested against the pillars at rest (rule 01) -------------------- */
+function toView(e) {
+  const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+  return [q.x, q.y];
+}
+let hulls = null, hullsAt = NaN;
+function pick(pt) {
+  if (hullsAt !== table.theta) {
+    setAz();
+    const P = proj(C), T = toward(C);
+    const near = CELLS.map((c, n) => ({ n, key: T[0] * c.cx + T[1] * c.cy })).sort((a, b) => b.key - a.key);
+    const half = EXTENT.r / Math.SQRT2, top = [];
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) top.push(P(sx * half, sy * half, 0), P(sx * half, sy * half, PB + 18));
+    hulls = { field: hull(top), cells: near.map(({ n }) => ({ n, shape: restHull(P, n) })) };
+    hullsAt = table.theta;
+  }
+  if (!inside(pt, hulls.field)) return null;
+  for (const { n, shape } of hulls.cells) if (inside(pt, shape)) return n;
+  return -1;                                           // over the plinth, between pillars
+}
+
+let hot = -1, hover = -1, touchHotUntil = 0, clock = 0, slow = false, frozen = false;
+let dragging = false, dragged = false, lastX = 0, lastT = 0, downX = 0, downY = 0, idle = 0;
 svg.addEventListener('pointerdown', e => {
   dragging = true; dragged = false; lastX = downX = e.clientX; downY = e.clientY; lastT = performance.now();
   svg.setPointerCapture(e.pointerId);
+  idle = 0; stopTour();
 });
 svg.addEventListener('pointermove', e => {
+  if (dragging) idle = 0;
   if (dragging && !dragged && Math.hypot(e.clientX - downX, e.clientY - downY) > 6) { dragged = true; svg.classList.add('dragging'); table.grab(); }
   if (dragging && dragged) {
     const now = performance.now();
     table.drag(((e.clientX - lastX) / Math.min(window.innerWidth, 900)) * Math.PI * 1.2, Math.max(1, now - lastT) / 1000);
     lastX = e.clientX; lastT = now;
+    return;
   }
+  if (e.pointerType !== 'mouse' || dragging || table.state().mode !== 'rest') return;
+  const n = pick(toView(e));
+  if (n === null) { hover = -1; hot = -1; return; }
+  stopTour(); idle = 0;
+  if (n >= 0 && n !== hover) { hover = hot = n; pluck(n, 0.45); }
 });
-const release = () => {
+const release = e => {
   if (!dragging) return;
   dragging = false; svg.classList.remove('dragging');
-  if (dragged) { if (performance.now() - lastT > 80) table.drag(0, 0.08); table.release(); }
+  if (dragged) { if (performance.now() - lastT > 80) table.drag(0, 0.08); table.release(); return; }
+  const n = pick(toView(e));
+  if (n === null) return;
+  if (n >= 0) { hot = n; if (e.pointerType !== 'mouse') touchHotUntil = clock + 2.4; pluckAll(CELLS[n].cx, CELLS[n].cy); }
+  else pluckAll();
 };
 svg.addEventListener('pointerup', release);
 svg.addEventListener('pointercancel', release);
-bindWheel(svg, table, {});
+svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !dragging) { hover = -1; hot = -1; } });
+bindWheel(svg, table, { onStart: () => { idle = 0; stopTour(); hover = -1; hot = -1; } });
 svg.addEventListener('keydown', e => {
-  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { table.flickBy(e.key === 'ArrowRight' ? 1 : -1); e.preventDefault(); }
+  const k = e.key;
+  if (k === 'ArrowRight' || k === 'ArrowLeft') { table.flickBy(k === 'ArrowRight' ? 1 : -1); e.preventDefault(); }
+  else if (k === ' ' || k === 'Enter') { pluckAll(); e.preventDefault(); }
+  else if (k === 'Escape') hot = -1;
+  else return;
+  idle = 0; stopTour();
 });
 
 /* ---- controls --------------------------------------------------------------- */
-const stroke = document.getElementById('stroke'), slowBtn = document.getElementById('slow'), themeBtn = document.getElementById('theme');
-let look = 0, slow = false;
+const stroke = document.getElementById('stroke'), pluckBtn = document.getElementById('pluck');
+const slowBtn = document.getElementById('slow'), themeBtn = document.getElementById('theme');
+let look = 0;
 const applyLook = () => { document.documentElement.style.setProperty('--hl-sw', stroke.value); look++; };
 stroke.addEventListener('input', applyLook);
+pluckBtn.addEventListener('click', () => { idle = 0; stopTour(); pluckAll(); });
 slowBtn.addEventListener('click', () => { slow = !slow; slowBtn.setAttribute('aria-pressed', slow); });
 const sysDark = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : sysDark.matches; };
@@ -92,24 +186,50 @@ sysDark.addEventListener('change', syncTheme);
 syncTheme();
 applyLook();
 
+/* ---- the tour: the field, then three springs that each answer differently, then a leave */
+const cell = (k, c) => KS.indexOf(k) + CS.indexOf(c) * KS.length;
+const HAIRLINE = cell(100, 18), RINGS = cell(40, 2), CREEPS = cell(40, 40);
+const show = n => () => { hot = n; pluck(n, 0.8); };
+const TOUR = [[1.0, () => pluckAll()], [4.8, show(HAIRLINE)], [6.6, show(RINGS)], [9.6, show(CREEPS)], [12.0, () => (hot = -1)], [12.8, () => table.flickBy(1)]];
+let tourT = 0, tourOn = !reduced, tourStep = 0;
+function stopTour() { if (tourOn && tourStep > 0) hot = -1; tourOn = false; tourT = 0; tourStep = 0; }
+function stepTour(dt) {
+  if (reduced) return;
+  if (!tourOn) {
+    idle += dt;
+    if (hover >= 0) idle = 0;
+    if (!dragging && idle > 8 && awake === 0 && table.state().mode === 'rest') { tourOn = true; tourT = 0; tourStep = 0; }
+    return;
+  }
+  if (tourStep === TOUR.length) { if (table.state().mode === 'rest') { tourT = 0; tourStep = 0; } else return; }
+  tourT += dt;
+  while (tourStep < TOUR.length && tourT >= TOUR[tourStep][0]) TOUR[tourStep++][1]();
+}
+
+// ?turn=n turns n quarters, ?hot=n chooses cell n, ?pluck=t shows the field t s after a pluck
 {
-  const q = location.search, t = q.match(/[?&]turn=([\d.]+)/), h = q.match(/[?&]hot=(\d+)/);
+  const q = location.search, t = q.match(/[?&]turn=([\d.]+)/), h = q.match(/[?&]hot=(\d+)/), p = q.match(/[?&]pluck=([\d.]+)/);
+  if (t || h || p) tourOn = false;
   if (t) table.jump(+t[1]);
   if (h) hot = +h[1];
+  if (p) { pluckAll(); for (let s = 0; s < +p[1]; s += 1 / 120) stepSprings(1 / 120); frozen = true; }
 }
 
 /* ---- loop: rewritten only when something moved (rule 07) ------------------------ */
 let prev = performance.now(), lastText = '', lastKey = '';
 function frame(now) {
   const dt = Math.min(0.05, (now - prev) / 1000) * (slow ? 0.25 : 1);
-  prev = now;
+  prev = now; clock += dt;
   table.step(dt, dragging && dragged);
-  const s = table.state();
-  const c = CELLS[hot];
-  const part = c ? `k ${c.k} · c ${c.c} · ζ ${c.zeta.toFixed(2)} · settle ${c.settle.toFixed(2)} s` : 'rest';
+  stepTour(dt);
+  if (!frozen) stepSprings(dt);
+  if (touchHotUntil && clock > touchHotUntil) { touchHotUntil = 0; hot = -1; }
+  const s = table.state(), c = CELLS[hot];
+  const part = c ? `k ${c.k} · c ${c.c} · ζ ${c.zeta.toFixed(2)} · settle ${c.settle.toFixed(2)} s`
+    : awake ? `ringing <b>${String(awake).padStart(2, '0')}</b>/${NC}` : 'rest';
   const text = `θ ${String(Math.round(s.degrees)).padStart(3, '0')}° · face <b>${s.face}</b>/4 · ${part}`;
   if (text !== lastText) { readout.innerHTML = text; lastText = text; }
-  const key = `${table.theta.toFixed(5)}|${hot}|${look}`;
+  const key = awake ? `${clock}` : `${table.theta.toFixed(5)}|${hot}|${look}`;
   if (key !== lastKey) {
     setAz();
     const P = proj(C), T = toward(C), k = (x, y) => T[0] * x + T[1] * y;
@@ -119,7 +239,7 @@ function frame(now) {
     const back = [], front = [];
     for (const p of base.slice(2)) { const d = prism3(P, T, p.frame, p.ring, p.inner, p.w0, p.w1); (k(p.frame.o[0], p.frame.o[1]) < 0 ? back : front).push(['sil', d.sil], ['cr', d.crease]); }
     fill(backG, back); fill(frontG, front);
-    fill(fieldG, atlas(P, T, heights, hot));
+    fill(fieldG, atlas(P, T, heights(), hot));
     lastKey = key;
   }
   requestAnimationFrame(frame);

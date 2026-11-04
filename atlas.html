@@ -80,16 +80,17 @@
     </style>
   </head>
   <body>
-    <svg id="stage" role="img" aria-label="A spring atlas on a turntable, drawn in thin lines: nine by nine pillars on a plinth, stiffness across and damping back, each as tall as its spring takes to settle, with a valley along critical damping. Drag sideways, swipe, or use left and right arrows to turn it." tabindex="0" preserveAspectRatio="xMidYMid meet"></svg>
+    <svg id="stage" role="img" aria-label="A spring atlas on a turntable, drawn in thin lines: nine by nine pillars on a plinth, stiffness across and damping back, each as tall as its spring takes to settle, with a valley along critical damping. Move over a pillar to pluck it; tap, press space or Pluck all to pluck the whole field; drag sideways, swipe, or use left and right arrows to turn it." tabindex="0" preserveAspectRatio="xMidYMid meet"></svg>
     <header>
       <h1>Spring atlas</h1>
       <span class="mono">Motion · 02</span>
     </header>
         <div class="bottom">
     <div class="readout mono" id="readout" aria-live="off">θ 000° · face <b>1</b>/4 · rest</div>
-    <p class="idea">Eighty-one springs, stiffness across, damping back. Each stands as tall as it takes to settle; the valley runs where damping is just enough.</p>
+    <p class="idea">Eighty-one springs, stiffness across, damping back. Each stands as tall as it takes to settle; the valley runs where damping is just enough. Pluck it and each answers by its own two numbers.</p>
     <div class="controls mono">
       <label>Stroke <input id="stroke" type="range" min="0.6" max="2" step="0.05" value="0.9" /></label>
+      <button id="pluck">Pluck all</button>
       <button id="slow" aria-pressed="false">Slow 0.25×</button>
       <button id="theme" aria-pressed="false">Dark</button>
     </div>

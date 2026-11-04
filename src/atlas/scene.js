@@ -1,12 +1,12 @@
-import { rings, rrect, circ, prism3, poly, open } from '../lib/iso.js';
+import { rings, rrect, circ, prism3, poly, open, hull } from '../lib/iso.js';
 
 /* The spring atlas, on Hairline's Terrain: a field of 9 × 9 rounded pillars on a plinth,
    each pillar one spring. Across, its stiffness k, from soft to stiff; back, its damping
    c, from little to much. At rest each pillar stands as tall as its spring takes to
    settle, so the field is a map of it: high where a spring rings on (soft, underdamped)
    and where it creeps in (stiff damping, overdamped), low along the valley between,
-   where a spring is damped just enough. A dashed line on the bed traces that valley's
-   floor, critical damping (ζ = 1). Graduated marks round the rim say which way k and c
+   where a spring is damped just enough. A dot on a lid down each column, and a dashed line
+   on the bed, trace that valley's floor, critical damping (ζ = 1). Graduated marks round the rim say which way k and c
    grow. Plucked, every pillar answers by its own two numbers.
    Millimetres; x across the field (k), y back (c), z up.                             */
 
@@ -100,5 +100,12 @@ export function atlas(P, T, hs, hot) {
   return out;
 }
 
+// a pillar's outline on screen at rest, for picking (rule 01): the hull of its foot and its lid
+export function restHull(P, n) {
+  const c = CELLS[n], f = FOOT / 2, pts = [];
+  for (const z of [ZB, PB + c.h0]) for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) pts.push(P(c.cx + sx * f, c.cy + sy * f, z));
+  return hull(pts);
+}
+export const PITCH = CELL;
 export const EXTENT = { r: Math.hypot(EXT / 2 + M, EXT / 2 + M), top: PB + 18 + AMP + 2 };
 export const restHeights = () => CELLS.map(c => c.h0);
