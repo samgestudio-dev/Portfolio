@@ -16,6 +16,7 @@ export default defineConfig({
         atlas: resolve(import.meta.dirname, 'atlas.html'),
         pop: resolve(import.meta.dirname, 'pop.html'),
         popV1: resolve(import.meta.dirname, 'pop-v1.html'),
+        popV2: resolve(import.meta.dirname, 'pop-v2.html'),
       },
     },
   },
