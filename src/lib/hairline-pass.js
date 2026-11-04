@@ -106,7 +106,7 @@ const lineFrag = /* glsl */`
   uniform float uCrease, uDepth, uHotLo, uHotHi, uForm, uFormOn, uDebug, uWorldPx, uReach, uCrest;
   uniform vec3 cPlate, cHi, cEdge, cMid, cLo;
   uniform float uHair, uMerge, uAlpha;
-  uniform float uPrint, uPrintT, uGrain, uGrainR, uPrintBlur, uHollow, uPrintRange, uDot, uDotMode, uDotR; uniform vec3 uLight;
+  uniform float uPrint, uPrintT, uGrain, uGrainR, uPrintBlur, uHollow, uPrintRange, uDot, uDotMode, uDotR, uPrintForm; uniform vec3 uLight;
   uniform sampler2D tBlue;
   // grain for the screen print: a hash per pixel, and value noise for blotchy edges
   float h12(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -268,7 +268,7 @@ const lineFrag = /* glsl */`
         }
       }
       na = normalize(na / wn);
-      float lit = 0.6 * (dot(na, normalize(uLight)) * 0.5 + 0.5) + 0.4 * shade(c);
+      float lit = (1.0 - uPrintForm) * (dot(na, normalize(uLight)) * 0.5 + 0.5) + uPrintForm * shade(c);
       // Halftone: a screen of dots fixed to the page (a mask the figure is seen through),
       // turned 45°; each dot as big as the shadow is deep there, from nothing at the edge
       // of the light to dots that run together in the darkest places
@@ -414,7 +414,7 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
     ...shared, tV: { value: rtV.texture }, uR: { value: 1.5 },
     uCrease: { value: 0.12 }, uDepth: { value: 0.004 }, uHotLo: { value: -1 }, uHotHi: { value: -1 }, uWorldPx: { value: 0.001 },
     uForm: { value: 0.02 }, uFormOn: { value: 1 }, uReach: { value: 1 }, uCrest: { value: 1 }, uHair: { value: style === 'hairline' ? 1 : 0 }, uMerge: { value: merge ? 1 : 0 }, uAlpha: { value: transparent ? 1 : 0 },
-    uPrint: { value: 0 }, uPrintT: { value: 0.3 }, uGrain: { value: 1 }, uGrainR: { value: 6 }, uPrintBlur: { value: 6 }, uHollow: { value: 2.5 }, uPrintRange: { value: 0.35 }, uDot: { value: 7 }, uDotMode: { value: 0 }, uDotR: { value: 0.36 }, tBlue: { value: BLUE_TEX }, uLight: { value: new THREE.Vector3(-0.5, 0.55, 0.7) },
+    uPrint: { value: 0 }, uPrintT: { value: 0.3 }, uGrain: { value: 1 }, uGrainR: { value: 6 }, uPrintBlur: { value: 6 }, uHollow: { value: 2.5 }, uPrintRange: { value: 0.35 }, uDot: { value: 7 }, uDotMode: { value: 0 }, uDotR: { value: 0.36 }, uPrintForm: { value: 0.4 }, tBlue: { value: BLUE_TEX }, uLight: { value: new THREE.Vector3(-0.5, 0.55, 0.7) },
     uDebug: { value: /[?&]debug=form/.test(location.search) ? 1 : 0 },
     cPlate: { value: col('plate') }, cHi: { value: col('hi') }, cEdge: { value: col('edge') },
     cMid: { value: col('mid') }, cLo: { value: col('lo') },
@@ -480,7 +480,8 @@ export function createHairlinePass(renderer, { depthBias = 0, lines = 'study', p
     // dot: the halftone screen's pitch, in CSS px
     // mode: 'am', dots sized by tone on a fixed screen; 'fm', one size, their density by tone;
     // dotR: the FM dot's radius, as a share of its cell
-    setPrint({ on = true, threshold = 0.3, grain = 1, grainSize = 6, light = [-0.5, 0.55, 0.7], blur = 6, hollow = 2.5, range = 0.35, dot = 7, mode = 'am', dotR = 0.36 } = {}) {
+    setPrint({ on = true, threshold = 0.3, grain = 1, grainSize = 6, light = [-0.5, 0.55, 0.7], blur = 6, hollow = 2.5, range = 0.35, dot = 7, mode = 'am', dotR = 0.36, form = 0.4 } = {}) {
+      uniforms.uPrintForm.value = form;
       uniforms.uPrintRange.value = range; uniforms.uDot.value = dot * ratio; uniforms.uDotMode.value = mode === 'fm' ? 1 : 0; uniforms.uDotR.value = dotR;
       uniforms.uPrint.value = on ? 1 : 0; uniforms.uPrintT.value = threshold; uniforms.uGrain.value = grain;
       uniforms.uGrainR.value = grainSize * ratio; uniforms.uLight.value.set(...light);

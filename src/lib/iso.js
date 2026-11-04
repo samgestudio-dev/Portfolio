@@ -93,7 +93,8 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
    L: a unit vector in the world toward the light; pitch in the picture's own units.     */
 import { BLUE, BLUE_N } from './bluenoise.js';
 let LIGHT = null, SHADES = null, PITCH = 4, MODE = 'am', DOT_R = 0.36;
-// mode 'am': dots sized by tone, on a 45° screen; 'fm': one size, kept where a blue-noise rank is under the tone
+// mode 'solid': the shadowed walls in plain ink; 'am': dots sized by tone, on a 45° screen;
+// 'fm': one size, kept where a blue-noise rank is under the tone
 export function setLight(L, { pitch = 4, mode = 'am', dotR = 0.36 } = {}) { LIGHT = L; PITCH = pitch; MODE = mode; DOT_R = dotR; SHADES = L ? new Map() : null; }
 export const shadeOf = sil => SHADES?.get(sil) || '';
 const R45 = Math.SQRT1_2;
@@ -143,7 +144,9 @@ export function prism3(P, T, f, ring, inner, w0, w1) {
         const n = nrm({ nu: (a.nu + b.nu) / 2, nv: (a.nv + b.nv) / 2 }), l = Math.hypot(...n) || 1;
         quads.push({ pg: [ta, tb, bb, ba], top: ta, ax: [ba[0] - ta[0], ba[1] - ta[1]], dark: Math.min(1, -dot(n, LIGHT) / l / 0.7) });
       }
-      const d = halftone(quads);
+      const d = MODE === 'solid'
+        ? poly(r.map(q => P(...at(f, q.u, q.v, wt))).concat(r.map(q => P(...at(f, q.u, q.v, wb))).reverse()))
+        : halftone(quads);
       if (d) SHADES.set(sil, d);
     }
   }

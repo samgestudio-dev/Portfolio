@@ -33,7 +33,10 @@ function spring(s, dt) {
 const sp = x => ({ x, v: 0, t: x });
 const norm3 = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
 // David's silkscreen: the light (view space) from the upper left, a little in front
-export const PRINT = { on: true, threshold: 0.62, range: 0.4, dot: 4.5, mode: 'am', dotR: 0.36, grain: 1, grainSize: 5, light: [-0.62, 0.5, 0.6], blur: 6, hollow: 1.5 };   // the shadows in halftone dots
+export const PRINT = { on: true, threshold: 0.62, range: 0.4, dot: 3, mode: 'am', dotR: 0.36, form: 0.15, grain: 1, grainSize: 5, light: [0.7, 0.45, 0.32], blur: 6, hollow: 1.1 };   // his shadows in fine halftone dots, lit from the upper right
+// ?light=x,y,z (view space) and ?form=k (how much of the model's own frontal shading is mixed in), for tuning
+{ const m = location.search.match(/[?&]light=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)/); if (m) PRINT.light = [+m[1], +m[2], +m[3]]; }
+{ const m = location.search.match(/[?&]form=([\d.]+)/); if (m) PRINT.form = +m[1]; }
 // ?dots=am,4.5 or ?dots=fm,3.5[,0.36]: the screen and its pitch in px (and the FM dot's size)
 { const m = location.search.match(/[?&]dots=(am|fm),([\d.]+)(?:,([\d.]+))?/); if (m) Object.assign(PRINT, { mode: m[1], dot: +m[2], ...(m[3] ? { dotR: +m[3] } : {}) }); }
 // ?print=threshold,range,dot,hollow overrides, for tuning by eye
@@ -179,7 +182,7 @@ export function createObject(kind, { onOpen, colors }) {
     // every wall seen but turned from it is laid in ink, right after its own solid
     const c = Math.cos(C_.az), sn = Math.sin(C_.az), right = [c, -sn, 0];
     const L = norm3([-0.6 * right[0] + 0.5 * T[0], -0.6 * right[1] + 0.5 * T[1], 0.62 + 0.5 * T[2]]);
-    setLight(L, { pitch: PRINT.dot / pxPerUnit, mode: PRINT.mode, dotR: PRINT.dotR });
+    setLight(L, { mode: 'solid' });          // the phone, cabinet and atlas: shadowed walls in plain ink
     const list = kind === 'product' ? phone(P, T, layers.map(L => Math.max(0, L.x)))
       : kind === 'system' ? cabinet(P, T, drawers.map(d => Math.max(0, d.x)))
       : atlas(P, T, CELLS.map((c, n) => ATLAS_REST[n] + AMP * knee(SUM[n])), -1);
