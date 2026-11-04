@@ -1,191 +1,209 @@
 import { createObject } from './object.js';
 
-/* The pop page. Learned from the portfolios studied:
-   · the object is the navigation (Lusion, Unseen, Bruno Simon): four comic panels, each
-     a live object that answers the hand, open into its discipline
-   · a statement for a hero, the disciplines in it as links (Clay Boan, Eduard Bodak),
-     here as bold colour blocks that wake their panel
-   · work as an index of rows, number · title · kind · year (Bethany Heck, Lusion,
-     Dennis Snellenberg), filtered by discipline (Unseen), a preview card at the cursor
-   · a few poster-sized lines mid-page (Lusion), services as short headed items (Eduard
-     Bodak), a contact block with click to copy and the local time (Eduard Bodak, Rauno)
-   Printed in pop: flat colour, black ink, Ben-Day dots, hard shadows.                  */
+/* The pop page, v3: a comic page read sideways. Six frames in a strip; one thing in each.
+   The four coloured frames hold the objects, alive; a frame opens by growing to the page,
+   where its words and its work come in. The strip answers the wheel, a trackpad, a drag on
+   empty ground, the arrow keys and the film-strip at the foot; on a phone it runs down.   */
 
 const DISC = [
   { id: 'art', num: '01', name: 'Art', c: 'var(--red)', sub: 'Sculpture & installation',
-    title: 'Sculpture & installation', lede: 'Form, material and space, made away from the screen, and drawn back onto it in lines.',
+    lede: 'Form, material and space, made away from the screen, and drawn back onto it in lines.',
     items: [
-      { t: 'Sculpture', k: 'Fine art', y: 'Ongoing', s: 'Soon' },
-      { t: 'Installation', k: 'Fine art', y: 'Ongoing', s: 'Soon' },
-      { t: 'David, in lines', k: 'WebGL line study', y: '2026', href: './david.html' },
+      { t: 'Sculpture', k: 'Fine art · ongoing' },
+      { t: 'Installation', k: 'Fine art · ongoing' },
+      { t: 'David, in lines', k: 'WebGL line study · 2026', href: './david.html' },
     ] },
   { id: 'product', num: '02', name: 'Product', c: 'var(--blue)', sub: 'Interfaces people use',
-    title: 'Interfaces people use', lede: 'UI and UX case studies, from the first question to the last tap: search, booking, lending.',
+    lede: 'UI and UX case studies, from the first question to the last tap: search, booking, lending.',
     items: [
-      { t: 'Trip.com Double Search Bar', k: 'UI / UX case study', y: '2026', s: 'Soon' },
-      { t: 'Exhibizio', k: 'iOS app for art shows', y: '2025', s: 'Soon' },
-      { t: 'iPhone Air, in layers', k: 'Interactive object', y: '2026', href: './phone.html' },
+      { t: 'Trip.com double search bar', k: 'UI / UX case study · 2026' },
+      { t: 'Exhibizio', k: 'iOS app for art shows · 2025' },
+      { t: 'iPhone Air, in layers', k: 'Interactive object · 2026', href: './phone.html' },
     ] },
   { id: 'system', num: '03', name: 'System', c: 'var(--yellow)', sub: 'Design systems & tokens',
-    title: 'Systems & tokens', lede: 'One source of truth that keeps design and code in step: colour, type, space and the names for them.',
+    lede: 'One source of truth that keeps design and code in step: colour, type, space, and the names for them.',
     items: [
-      { t: 'PeraSure Design System', k: 'Design system & tokens', y: '2026', s: 'Soon' },
-      { t: 'Token cabinet', k: 'Interactive object', y: '2026', href: './cabinet.html' },
+      { t: 'PeraSure design system', k: 'Design system & tokens · 2026' },
+      { t: 'Token cabinet', k: 'Interactive object · 2026', href: './cabinet.html' },
     ] },
   { id: 'motion', num: '04', name: 'Motion', c: 'var(--pink)', sub: 'Timing, springs & rhythm',
-    title: 'Motion & interaction', lede: 'How a thing should move: springs, timing and the small answers an interface gives back.',
+    lede: 'How a thing should move: springs, timing and the small answers an interface gives back.',
     items: [
-      { t: 'PeraSure motion prototypes', k: 'Animation & prototypes', y: '2026', s: 'Soon' },
-      { t: 'Spring atlas', k: 'Interactive object', y: '2026', href: './atlas.html' },
-      { t: 'Flipbook', k: 'Interactive object', y: '2026', href: './flipbook.html' },
-      { t: 'Spring rack', k: 'Interactive object', y: '2026', href: './springs.html' },
-      { t: 'Spacing chart', k: 'Interactive object', y: '2026', href: './spacing.html' },
+      { t: 'PeraSure motion prototypes', k: 'Animation & prototypes · 2026' },
+      { t: 'Spring atlas', k: 'Interactive object · 2026', href: './atlas.html' },
+      { t: 'Flipbook', k: 'Interactive object · 2026', href: './flipbook.html' },
+      { t: 'Spring rack', k: 'Interactive object · 2026', href: './springs.html' },
+      { t: 'Spacing chart', k: 'Interactive object · 2026', href: './spacing.html' },
     ] },
 ];
 const byId = Object.fromEntries(DISC.map(d => [d.id, d]));
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const touch = matchMedia('(hover: none)').matches;
+const vertical = () => innerWidth <= 860;
 const $ = id => document.getElementById(id);
 const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-/* ---- the starburst sticker and the marquees ---- */
-{
-  const pts = [];
-  for (let i = 0; i < 28; i++) { const a = (i / 28) * Math.PI * 2, r = i % 2 ? 44 : 58; pts.push(`${(Math.cos(a) * r).toFixed(1)},${(Math.sin(a) * r).toFixed(1)}`); }
-  $('burstShape').setAttribute('points', pts.join(' '));
-  const words = ['Interfaces', 'Systems', 'Motion', 'Art', 'Design', 'Code', 'Objects'];
-  const run = words.map(w => `<span>${w}</span><em>✶</em>`).join('');
-  $('mq1').innerHTML = run + run;
-  const run2 = ['Open for projects', 'Say hello', 'Design · code · objects'].map(w => `<span>${w}</span><em>●</em>`).join('');
-  $('mq2').innerHTML = run2 + run2 + run2 + run2;
-}
-
-/* ---- the four panels ---- */
-if (touch) document.querySelector('.hero-side .label:last-child').textContent = '↓ Tap an object to open it · swipe sideways on it to turn it';
-const comic = $('comic');
+/* ---- the four coloured frames ---- */
+const strip = $('strip'), outro = $('f-outro');
 for (const d of DISC) {
-  const p = document.createElement('div');
-  p.className = `panel ${d.id}`;
-  p.tabIndex = 0;
-  p.setAttribute('role', 'link');
-  p.setAttribute('aria-label', `${d.num} ${d.name}: ${d.sub}. Open`);
-  p.innerHTML = `<span class="p-num">${d.num}</span><span class="p-hint">${touch ? 'Tap to open' : 'Drag to turn · click to open'}</span><div class="p-stage"></div><div class="p-cap"><b>${d.name}</b><span>${d.sub}</span></div>`;
-  comic.appendChild(p);
-  d.panel = p; d.stage = p.querySelector('.p-stage');
+  const f = document.createElement('section');
+  f.className = `frame colour ${d.id}`;
+  f.id = 'f-' + d.id; f.tabIndex = 0; f.setAttribute('role', 'listitem');
+  f.setAttribute('aria-label', `${d.num} ${d.name}: ${d.sub}. Press Enter to open`);
+  f.innerHTML = `<span class="f-num">${d.num}</span><span class="f-hint">${touch ? 'Tap to open' : 'Drag to turn · click to open'}</span><div class="p-stage"></div>
+    <div class="cap"><span class="box big">${d.name}</span><span class="box sub"><b>${esc(d.sub)}.</b> ${esc(d.lede)}</span><span class="open">Open <span aria-hidden="true">→</span></span></div>`;
+  strip.insertBefore(f, outro);
+  d.frame = f; d.stage = f.querySelector('.p-stage');
   d.obj = createObject(d.id, {
-    colors: { david: { plate: '#ffffff', hi: '#111111', edge: '#111111', mid: '#1c1c1c', lo: '#3a3a3a' } },
+    colors: { david: { plate: '#ffffff', hi: '#141412', edge: '#141412', mid: '#1c1c1c', lo: '#3a3a3a' } },
     onOpen: e => open(d.id, e),
   });
   d.obj.mount(d.stage);
-  d.obj.bind(p);
+  d.obj.bind(d.stage);
   d.obj.bind($('room-stage'));
-  p.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') wake(d.id, true); });
-  p.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') wake(d.id, false); });
-  p.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(d.id, null); } });
-  p.addEventListener('focus', () => wake(d.id, true));
-  p.addEventListener('blur', () => wake(d.id, false));
+  // the frame's ground opens it too (a drag on it pans the strip, handled below)
+  f.addEventListener('click', e => { if (!panned && !e.target.closest('.p-stage')) open(d.id, e); });
+  f.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') d.obj.setHover(true); });
+  f.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !d.obj.open) d.obj.setHover(false); });
+  f.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(d.id, null); } });
 }
-// a word in the headline and its panel wake each other
-function wake(id, on) {
-  const d = byId[id];
-  d.obj.setHover(on);
-  d.panel.classList.toggle('on', on);
-  document.querySelector(`.hl[data-k="${id}"]`)?.classList.toggle('on', on);
-}
-for (const a of document.querySelectorAll('.hl')) {
-  a.addEventListener('pointerenter', () => wake(a.dataset.k, true));
-  a.addEventListener('pointerleave', () => wake(a.dataset.k, false));
-  a.addEventListener('click', e => { e.preventDefault(); open(a.dataset.k, e); });
-}
-// on a phone there is no hover: a panel wakes while it is well in view
+const FRAMES = [...strip.querySelectorAll('.frame')];
+for (const a of document.querySelectorAll('.intro .hl')) a.addEventListener('click', e => { e.preventDefault(); open(a.dataset.k, e); });
+
+/* ---- the film-strip, and which frame is in view ---- */
+const film = $('film'), counter = $('counter');
+FRAMES.forEach((f, i) => {
+  const b = document.createElement('button');
+  b.setAttribute('aria-label', f.getAttribute('aria-label').split('.')[0]);
+  const d = DISC.find(x => x.frame === f);
+  if (d) b.style.setProperty('--c', d.c); else if (f.classList.contains('outro')) b.style.setProperty('--c', '#1b1b19');
+  b.addEventListener('click', () => goTo(i));
+  film.appendChild(b);
+});
+let active = 0;
 const seen = new Set();
 const io = new IntersectionObserver(es => {
   for (const en of es) {
-    const d = DISC.find(x => x.panel === en.target);
-    if (en.isIntersecting) seen.add(d.id); else seen.delete(d.id);
-    if (touch) wake(d.id, en.intersectionRatio > 0.6);
+    const i = FRAMES.indexOf(en.target), d = DISC.find(x => x.frame === en.target);
+    if (en.intersectionRatio > 0.55) {
+      active = i;
+      counter.textContent = `${String(i + 1).padStart(2, '0')} / ${String(FRAMES.length).padStart(2, '0')}`;
+      [...film.children].forEach((b, k) => b.setAttribute('aria-current', k === i));
+    }
+    en.target.classList.toggle('live', en.intersectionRatio > 0.55);
+    if (d) { if (en.isIntersecting) seen.add(d.id); else seen.delete(d.id); if (touch) d.obj.setHover(en.intersectionRatio > 0.55); }
   }
-}, { threshold: [0, 0.6] });
-DISC.forEach(d => io.observe(d.panel));
+}, { threshold: [0, 0.55] });
+FRAMES.forEach(f => io.observe(f));
+function goTo(i) {
+  i = Math.max(0, Math.min(FRAMES.length - 1, i));
+  FRAMES[i].scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
+}
+$('home').addEventListener('click', e => { e.preventDefault(); goTo(0); });
 
-/* ---- the index of work, its filters and its cursor card ---- */
-const index = $('index'), peek = $('peek');
-let n = 0;
-for (const d of DISC) for (const it of d.items) {
-  n++;
-  const row = document.createElement(it.href ? 'a' : 'div');
-  row.className = 'row';
-  if (it.href) row.href = it.href; else { row.tabIndex = 0; row.setAttribute('role', 'button'); }
-  row.dataset.d = d.id;
-  row.style.setProperty('--c', d.c);
-  row.innerHTML = `<span class="n">${String(n).padStart(2, '0')}</span><span class="t">${esc(it.t)}</span><span class="k">${esc(d.name)} · ${esc(it.k)}</span><span class="y">${esc(it.y)}</span><span class="s ${it.href ? 'lab' : ''}">${it.href ? 'Open ↗' : 'Case soon'}</span>`;
-  if (!it.href) {
-    row.addEventListener('click', e => open(d.id, e));
-    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(d.id, null); } });
+/* ---- moving the strip: wheel, trackpad, a drag on empty ground, keys ---- */
+// the wheel: a vertical wheel runs the strip sideways; a trackpad's sideways swipe runs it too
+let wheelT = 0;
+strip.addEventListener('wheel', e => {
+  if (current || e.ctrlKey) return;
+  if (vertical()) return;                                       // the strip is the page's own scroller there
+  const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  if (e.target.closest('.p-stage') && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // a sideways swipe on an object turns it
+  e.preventDefault();
+  strip.scrollLeft += dx;
+  clearTimeout(wheelT); wheelT = setTimeout(() => {}, 120);
+}, { passive: false });
+// a drag on the ground pans the strip and lets it coast to the nearest frame
+let pan = null, panned = false;
+strip.addEventListener('pointerdown', e => {
+  if (current || e.button || e.target.closest('.p-stage, .hl, .mail, a, button')) return;
+  pan = { x: e.clientX, y: e.clientY, sl: strip.scrollLeft, st: strip.scrollTop, id: e.pointerId, t: performance.now(), v: 0, last: e.clientX };
+  panned = false;
+});
+strip.addEventListener('pointermove', e => {
+  if (!pan) return;
+  const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+  if (!panned && Math.hypot(dx, dy) > 8) { panned = true; strip.classList.add('panning'); strip.setPointerCapture(pan.id); }
+  if (!panned) return;
+  if (vertical()) strip.scrollTop = pan.st - dy; else strip.scrollLeft = pan.sl - dx;
+  const now = performance.now(); pan.v = (e.clientX - pan.last) / Math.max(1, now - pan.t); pan.t = now; pan.last = e.clientX;
+});
+const endPan = e => {
+  if (!pan) return;
+  const was = panned, v = pan.v; pan = null;
+  strip.classList.remove('panning');
+  if (!was) return;
+  // a throw carries it to the next frame; otherwise it settles on the nearest
+  const step = vertical() ? 0 : v < -0.6 ? 1 : v > 0.6 ? -1 : 0;
+  goTo(step ? active + step : nearest());
+  setTimeout(() => (panned = false), 50);
+};
+strip.addEventListener('pointerup', endPan);
+strip.addEventListener('pointercancel', endPan);
+function nearest() {
+  const c = strip.scrollLeft + strip.clientWidth / 2;
+  let best = 0, bd = Infinity;
+  FRAMES.forEach((f, i) => { const d = Math.abs(f.offsetLeft + f.offsetWidth / 2 - c); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+addEventListener('keydown', e => {
+  if (current) {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowRight') $('room-next').click();
+    else if (e.key === 'ArrowLeft') $('room-prev').click();
+    return;
   }
-  row.addEventListener('pointerenter', () => { peek.style.setProperty('--c', d.c); $('peek-n').textContent = d.num; $('peek-t').textContent = d.name; peek.classList.add('on'); });
-  row.addEventListener('pointerleave', () => peek.classList.remove('on'));
-  index.appendChild(row);
-}
-let px = 0, py = 0, tx = 0, ty = 0;
-addEventListener('pointermove', e => { tx = e.clientX + 130; ty = e.clientY; });
-const filters = document.querySelector('.filters');
-for (const d of DISC) {
-  const b = document.createElement('button');
-  b.className = 'btn'; b.dataset.f = d.id; b.setAttribute('aria-pressed', 'false');
-  b.innerHTML = `<i class="sw" style="--c:${d.c}"></i>${d.name}`;
-  filters.appendChild(b);
-}
-filters.addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  for (const x of filters.children) x.setAttribute('aria-pressed', x === b);
-  for (const r of index.children) r.hidden = b.dataset.f !== 'all' && r.dataset.d !== b.dataset.f;
+  if (e.target.closest('input, textarea')) return;
+  const k = e.key;
+  if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown') goTo(active + 1);
+  else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') goTo(active - 1);
+  else if (k === 'Home') goTo(0); else if (k === 'End') goTo(FRAMES.length - 1);
+  else if (k === 'Enter' || k === ' ') { const d = DISC.find(x => x.frame === FRAMES[active]); if (d) open(d.id, null); else return; }
+  else if (/^[1-4]$/.test(k)) open(DISC[+k - 1].id, null);
+  else return;
+  e.preventDefault();
 });
 
-/* ---- services ---- */
-$('services').innerHTML = DISC.map(d => `<div class="svc"><i style="--c:${d.c}">${d.num}</i><b>${esc(d.name)}</b><p>${esc(d.lede)}</p></div>`).join('');
-
-/* ---- poster lines slide in once ---- */
-new IntersectionObserver((es, ob) => { for (const en of es) if (en.isIntersecting) { en.target.classList.add('in'); ob.unobserve(en.target); } }, { threshold: 0.3 }).observe($('say'));
-
-/* ---- contact: click to copy, the local time ---- */
+/* ---- contact ---- */
 const emailBtn = $('email');
 emailBtn.addEventListener('click', async () => {
   const addr = emailBtn.dataset.email;
-  if (!addr) { emailBtn.textContent = 'Email · add your address in pop.html'; return; }
-  try { await navigator.clipboard.writeText(addr); emailBtn.textContent = 'Copied ✓'; } catch { emailBtn.textContent = addr; }
-  setTimeout(() => (emailBtn.textContent = `Email · ${addr}`), 1800);
+  if (!addr) return;
+  try { await navigator.clipboard.writeText(addr); $('email-note').textContent = 'copied'; } catch { $('email-note').textContent = 'select to copy'; }
+  setTimeout(() => ($('email-note').textContent = 'click to copy'), 1800);
 });
+if (emailBtn.dataset.email) $('email-text').textContent = emailBtn.dataset.email;
 function clock() {
   const t = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Shanghai' }).format(new Date());
-  $('clock').textContent = `UTC+8 · ${t}`;
-  $('clock2').textContent = `(Local time · UTC+8 · ${t})`;
+  $('clock2').textContent = `UTC+8 · ${t}`;
 }
 clock(); setInterval(clock, 15000);
 
-/* ---- a discipline, opened: its colour floods out from where it was chosen ---- */
+/* ---- a frame, opened: it grows from where it stands to fill the page ---- */
 const room = $('room'), roomStage = $('room-stage');
-let current = null, closing = 0;
+let current = null, closing = 0, pushed = false;
+const rowHTML = (it, n) => {
+  const link = !!it.href, tag = link ? 'a' : 'div';
+  return `<${tag} class="row ${link ? 'link' : 'soon'}"${link ? ` href="${it.href}"` : ''}><span class="n">${String(n).padStart(2, '0')}</span><span><span class="t">${esc(it.t)}</span><br><span class="k">${esc(it.k)}</span></span><span class="go">${link ? 'Open →' : 'Soon'}</span></${tag}>`;
+};
 function open(id, e) {
   const d = byId[id];
   if (current === id) return;
-  const r = d.panel.getBoundingClientRect();
-  const x = e?.clientX ?? r.left + r.width / 2, y = e?.clientY ?? r.top + r.height / 2;
-  const rad = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y)) + 40;
+  const r = d.frame.getBoundingClientRect();
   if (current) moveBack();
   current = id;
   clearTimeout(closing);
   room.hidden = false;
-  room.style.setProperty('--c', d.c); room.style.setProperty('--x', `${x}px`); room.style.setProperty('--y', `${y}px`); room.style.setProperty('--rad', `${rad}px`);
-  room.classList.remove('ready');
+  room.className = `room ${id}`;
+  room.style.setProperty('--t', `${Math.max(0, r.top)}px`); room.style.setProperty('--l', `${Math.max(0, r.left)}px`);
+  room.style.setProperty('--b', `${Math.max(0, innerHeight - r.bottom)}px`); room.style.setProperty('--r', `${Math.max(0, innerWidth - r.right)}px`);
   fillRoom(d);
   void room.offsetWidth;
   room.classList.add('on');
-  document.body.classList.add('locked');
-  wake(id, false);
-  // the object leaves its panel once the colour has covered it, and settles into the room
+  d.obj.setHover(false);
+  // the object leaves its frame once the frame has grown over it, and settles into the room
   setTimeout(() => { if (current !== id) return; d.obj.mount(roomStage); d.obj.open = true; d.obj.setHover(true); room.classList.add('ready'); }, reduced ? 0 : 320);
-  if (location.hash !== '#' + id) history.pushState(null, '', '#' + id);
+  if (location.hash !== '#' + id) { pushed = true; history.pushState(null, '', '#' + id); }
   $('room-close').focus({ preventScroll: true });
 }
 function moveBack() {
@@ -195,40 +213,36 @@ function moveBack() {
 }
 function close(fromHistory = false) {
   if (!current) return;
-  const id = current;
+  const id = current, d = byId[id];
+  // shrink back onto the frame where it now stands
+  const r = d.frame.getBoundingClientRect();
+  room.style.setProperty('--t', `${Math.max(0, r.top)}px`); room.style.setProperty('--l', `${Math.max(0, r.left)}px`);
+  room.style.setProperty('--b', `${Math.max(0, innerHeight - r.bottom)}px`); room.style.setProperty('--r', `${Math.max(0, innerWidth - r.right)}px`);
   room.classList.remove('ready', 'on');
-  document.body.classList.remove('locked');
-  // back into its panel as the colour draws in
-  closing = setTimeout(() => { if (current === id) { moveBack(); current = null; room.hidden = true; } }, reduced ? 0 : 420);
+  closing = setTimeout(() => { if (current === id) { moveBack(); current = null; room.hidden = true; } }, reduced ? 0 : 400);
   if (!fromHistory && location.hash) history.pushState(null, '', location.pathname + location.search);
-  byId[id].panel.focus({ preventScroll: true });
+  d.frame.focus({ preventScroll: true });
 }
 function fillRoom(d) {
   const i = DISC.indexOf(d), prev = DISC[(i + 3) % 4], next = DISC[(i + 1) % 4];
   $('room-num').textContent = `${d.num} · ${d.name}`;
-  $('room-kicker').textContent = `(${d.name})`;
-  $('room-h').textContent = d.title;
-  $('room-lede').textContent = d.lede;
-  $('room-list').innerHTML = d.items.map((it, k) => `<${it.href ? `a href="${it.href}"` : 'div'} class="row" style="--c:var(--white)"><span class="n">${String(k + 1).padStart(2, '0')}</span><span class="t">${esc(it.t)}</span><span class="y">${esc(it.y)}</span><span class="s ${it.href ? 'lab' : ''}">${it.href ? 'Open ↗' : 'Case soon'}</span></${it.href ? 'a' : 'div'}>`).join('');
-  $('room-prev').textContent = `← ${prev.num} ${prev.name}`; $('room-prev').onclick = () => open(prev.id, null);
-  $('room-next').textContent = `${next.num} ${next.name} →`; $('room-next').onclick = () => open(next.id, null);
-  [...$('room-text').children].forEach((el, k) => el.style.setProperty('--i', k));
-  [...$('room-list').children].forEach((el, k) => el.style.setProperty('--i', 4 + k));
+  $('room-h').textContent = d.name;
+  $('room-lede').innerHTML = `<b>${esc(d.sub)}.</b> ${esc(d.lede)}`;
+  $('room-list').innerHTML = d.items.map((it, k) => rowHTML(it, k + 1)).join('');
+  const pv = $('room-prev'), nx = $('room-next');
+  pv.innerHTML = `<span class="l">←</span> ${prev.num} ${esc(prev.name)}`; pv.href = '#' + prev.id; pv.onclick = e => { e.preventDefault(); goTo(FRAMES.indexOf(prev.frame)); open(prev.id, null); };
+  nx.innerHTML = `${next.num} ${esc(next.name)} <span class="r">→</span>`; nx.href = '#' + next.id; nx.onclick = e => { e.preventDefault(); goTo(FRAMES.indexOf(next.frame)); open(next.id, null); };
 }
 $('room-close').addEventListener('click', () => close());
-addEventListener('keydown', e => {
-  if (!current) return;
-  if (e.key === 'Escape') close();
-  else if (e.key === 'ArrowRight' && !e.target.closest('input')) $('room-next').click();
-  else if (e.key === 'ArrowLeft' && !e.target.closest('input')) $('room-prev').click();
-});
 function fromHash() {
   const id = location.hash.slice(1);
-  if (byId[id]) open(id, null); else if (current) close(true);
+  if (byId[id]) { goTo(FRAMES.indexOf(byId[id].frame)); open(id, null); } else if (current) close(true);
 }
 addEventListener('popstate', fromHash);
 addEventListener('hashchange', fromHash);
-if (byId[location.hash.slice(1)]) requestAnimationFrame(() => open(location.hash.slice(1), null));
+if (byId[location.hash.slice(1)]) requestAnimationFrame(() => { const d = byId[location.hash.slice(1)]; FRAMES[FRAMES.indexOf(d.frame)].scrollIntoView({ inline: 'center', block: 'nearest' }); open(d.id, null); });
+// ?frame=n opens the strip on frame n (for still pictures)
+{ const m = location.search.match(/[?&]frame=(\d+)/); if (m) requestAnimationFrame(() => FRAMES[+m[1]]?.scrollIntoView({ inline: 'center', block: 'nearest' })); }
 
 /* ---- sizes ---- */
 const ro = new ResizeObserver(() => DISC.forEach(d => d.obj.resize()));
@@ -242,11 +256,8 @@ function frame(now) {
   prev = now;
   for (const d of DISC) {
     d.obj.step(dt);
-    // drawn once to begin with, then only while it can be seen
     if (seen.has(d.id) || d.obj.open || !d.drawn) { d.obj.draw(); d.drawn = true; }
   }
-  px += (tx - px) * 0.2; py += (ty - py) * 0.2;
-  peek.style.left = `${px.toFixed(1)}px`; peek.style.top = `${py.toFixed(1)}px`;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
