@@ -10,6 +10,7 @@ quantized (normals 10-bit) and meshopt-compressed. Load with GLTFLoader + Meshop
 
 | file          | triangles | size   | use                                   |
 |---------------|-----------|--------|---------------------------------------|
+| david-full.glb | 1.2M     | 3.6 MB | the full scan: David's real close-up on a computer (pop page), fetched when first wanted |
 | david-hi.glb  | 200k      | 821 KB | Fine Art close-up / zoom              |
 | david-mid.glb | 105k      | 733 KB | homepage turntable (desktop + iPhone); hands, feet and genitals at the 200k density; carries `_FORMNORMAL` |
 | david-lo.glb  | 30k       | 132 KB | first-paint placeholder / small tiles |
@@ -22,3 +23,7 @@ quantized (normals 10-bit) and meshopt-compressed. Load with GLTFLoader + Meshop
 feet and genitals locked (`tools/regions.py`, `tools/lockedsimplify.mjs`, meshoptimizer
 `simplifyWithAttributes`), so those keep the 200k detail in one seamless mesh. Its normals
 are carried from the full scan (nearest four scan vertices), not recomputed.
+
+`david-full.glb` is the whole scan, unsimplified: the same transform (Z-up → Y-up, centred on X/Z,
+feet on y = 0, height 1; its bounds match the others exactly), welded, quantized and
+meshopt-compressed with `gltf-transform optimize --simplify false`.
